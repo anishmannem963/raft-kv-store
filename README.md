@@ -55,6 +55,8 @@ For a local binary, set `DATA_DIR` to enable file-backed state. Leaving it unset
 go test -race ./...
 ```
 
+The CI fault-injection test identifies the active leader, commits a value, stops that leader, measures replacement election time, commits through the surviving two-node quorum, restarts the old leader, and verifies that all three nodes converge. The measured `election_ms` value is written to the GitHub Actions job summary; resume claims should use observed results across repeated benchmark runs rather than the test's five-second safety limit.
+
 ## Roadmap
 
 - [x] Leader election and heartbeats
@@ -64,5 +66,6 @@ go test -race ./...
 - [x] Linearizable reads and request deduplication
 - [ ] Snapshotting and log compaction
 - [x] Automated container-restart recovery test
-- [ ] Automated leader-failure and network-partition tests
+- [x] Automated leader-failure recovery test
+- [ ] Automated network-partition tests
 - [ ] Benchmarks for election, throughput, and recovery time

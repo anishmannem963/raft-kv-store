@@ -14,8 +14,11 @@ jobs:
       - run: go vet ./...
       - run: go test -race -count=5 ./...
       - run: go build ./cmd/node
-      - name: Verify three-node cluster
+      - name: Verify replication and leader failover
         run: |
           docker compose up --build --detach
           trap 'docker compose down --volumes' EXIT
           ./scripts/smoke-test.sh
+          ./scripts/leader-failure-test.sh | tee /tmp/failover-result.txt
+          echo '### Leader failover' >> "$GITHUB_STEP_SUMMARY"
+          tail -1 /tmp/failover-result.txt >> "$GITHUB_STEP_SUMMARY"

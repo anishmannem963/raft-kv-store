@@ -14,3 +14,8 @@ jobs:
       - run: go vet ./...
       - run: go test -race ./...
       - run: go build ./cmd/node
+      - name: Verify three-node cluster
+        run: |
+          docker compose up --build --detach
+          trap 'docker compose down --volumes' EXIT
+          ./scripts/smoke-test.sh

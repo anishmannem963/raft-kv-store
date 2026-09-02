@@ -57,6 +57,8 @@ go test -race ./...
 
 The CI fault-injection test identifies the active leader, commits a value, stops that leader, measures replacement election time, commits through the surviving two-node quorum, restarts the old leader, and verifies that all three nodes converge. The measured `election_ms` value is written to the GitHub Actions job summary; resume claims should use observed results across repeated benchmark runs rather than the test's five-second safety limit.
 
+The partition test keeps the old leader process alive but disconnects it from the cluster network. It verifies that the isolated leader cannot serve a linearizable read, the two-node majority elects a leader and commits, and the healed cluster converges to one leader with identical committed state. Election and healing durations are recorded in the Actions summary.
+
 ## Roadmap
 
 - [x] Leader election and heartbeats
@@ -67,5 +69,5 @@ The CI fault-injection test identifies the active leader, commits a value, stops
 - [ ] Snapshotting and log compaction
 - [x] Automated container-restart recovery test
 - [x] Automated leader-failure recovery test
-- [ ] Automated network-partition tests
+- [x] Automated network-partition recovery test
 - [ ] Benchmarks for election, throughput, and recovery time

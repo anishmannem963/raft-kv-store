@@ -5,13 +5,21 @@ services:
       PEERS: node1=http://node1:8080,node2=http://node2:8080,node3=http://node3:8080
     command: ["-id", "node1"]
     ports: ["8081:8080"]
+    volumes: ["node1-data:/data"]
   node2:
     build: .
     environment: *cluster
     command: ["-id", "node2"]
     ports: ["8082:8080"]
+    volumes: ["node2-data:/data"]
   node3:
     build: .
     environment: *cluster
     command: ["-id", "node3"]
     ports: ["8083:8080"]
+    volumes: ["node3-data:/data"]
+
+volumes:
+  node1-data:
+  node2-data:
+  node3-data:

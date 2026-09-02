@@ -43,4 +43,20 @@ for port in "${ports[@]}"; do
   fi
 done
 
-echo "Leader elected on port ${leader_port}; value replicated to all nodes"
+docker compose restart node3 >/dev/null
+recovered=false
+for _ in $(seq 1 15); do
+  response=$(curl --silent "http://localhost:8083/kv/ci-key" || true)
+  if [[ "$response" == *'"value":"replicated"'* ]]; then
+    recovered=true
+    break
+  fi
+  sleep 1
+done
+if [[ "$recovered" != true ]]; then
+  echo "Node 3 did not recover its committed value after restart"
+  docker compose logs node3
+  exit 1
+fi
+
+echo "Leader elected on port ${leader_port}; value replicated and recovered after restart"

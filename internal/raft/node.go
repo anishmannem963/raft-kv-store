@@ -25,6 +25,8 @@ type Node struct {
 	nextIndex map[string]int
 	matchIndex map[string]int
 	store map[string]string
+	storage Storage
+	storageErr error
 	electionMin time.Duration
 	electionMax time.Duration
 	heartbeat time.Duration
@@ -34,10 +36,31 @@ type Node struct {
 }
 
 func NewNode(id string, peers map[string]string, transport Transport) *Node {
-	return &Node{id:id, peers:peers, transport:transport, state:Follower, commitIndex:-1, lastApplied:-1,
+	node, err := NewNodeWithStorage(id, peers, transport, &MemoryStorage{})
+	if err != nil {
+		panic(err)
+	}
+	return node
+}
+
+func NewNodeWithStorage(id string, peers map[string]string, transport Transport, storage Storage) (*Node, error) {
+	n := &Node{id:id, peers:peers, transport:transport, state:Follower, commitIndex:-1, lastApplied:-1,
 		nextIndex:map[string]int{}, matchIndex:map[string]int{}, store:map[string]string{},
+		storage:storage,
 		electionMin:300*time.Millisecond, electionMax:550*time.Millisecond, heartbeat:100*time.Millisecond,
 		resetElection:make(chan struct{},1), stop:make(chan struct{}), stopped:make(chan struct{})}
+	state, err := storage.Load()
+	if err != nil && !errors.Is(err, ErrNoState) {
+		return nil, err
+	}
+	if err == nil {
+		n.term = state.CurrentTerm
+		n.votedFor = state.VotedFor
+		n.log = append([]LogEntry(nil), state.Log...)
+		n.commitIndex = min(state.CommitIndex, len(n.log)-1)
+		n.applyCommittedLocked()
+	}
+	return n, nil
 }
 
 func (n *Node) Start() { go n.run() }
@@ -73,6 +96,11 @@ func (n *Node) randomElectionTimeout() time.Duration {
 func (n *Node) startElection() {
 	n.mu.Lock()
 	n.state = Candidate; n.term++; term := n.term; n.votedFor = n.id; n.leaderID = ""
+	if err := n.persistLocked(); err != nil {
+		n.state = Follower
+		n.mu.Unlock()
+		return
+	}
 	lastIndex, lastTerm := n.lastLogInfoLocked()
 	n.mu.Unlock()
 
@@ -89,7 +117,7 @@ func (n *Node) startElection() {
 			resp, err := n.transport.RequestVote(ctx, peer, RequestVoteRequest{Term:term, CandidateID:n.id, LastLogIndex:lastIndex, LastLogTerm:lastTerm})
 			if err != nil { return }
 			n.mu.Lock()
-			if resp.Term > n.term { n.becomeFollowerLocked(resp.Term, ""); n.mu.Unlock(); return }
+			if resp.Term > n.term { n.becomeFollowerLocked(resp.Term, ""); n.persistLocked(); n.mu.Unlock(); return }
 			stillCandidate := n.state == Candidate && n.term == term
 			n.mu.Unlock()
 			if resp.VoteGranted && stillCandidate { voteMu.Lock(); votes++; voteMu.Unlock() }
@@ -109,18 +137,26 @@ func (n *Node) startElection() {
 func (n *Node) HandleRequestVote(req RequestVoteRequest) RequestVoteResponse {
 	n.mu.Lock(); defer n.mu.Unlock()
 	if req.Term < n.term { return RequestVoteResponse{Term:n.term} }
-	if req.Term > n.term { n.becomeFollowerLocked(req.Term, "") }
+	if req.Term > n.term {
+		n.becomeFollowerLocked(req.Term, "")
+		if n.persistLocked() != nil { return RequestVoteResponse{Term:n.term} }
+	}
 	lastIndex, lastTerm := n.lastLogInfoLocked()
 	upToDate := req.LastLogTerm > lastTerm || (req.LastLogTerm == lastTerm && req.LastLogIndex >= lastIndex)
 	grant := (n.votedFor == "" || n.votedFor == req.CandidateID) && upToDate
-	if grant { n.votedFor = req.CandidateID; n.signalElectionReset() }
+	if grant {
+		n.votedFor = req.CandidateID
+		if n.persistLocked() != nil { return RequestVoteResponse{Term:n.term} }
+		n.signalElectionReset()
+	}
 	return RequestVoteResponse{Term:n.term, VoteGranted:grant}
 }
 
 func (n *Node) HandleAppendEntries(req AppendEntriesRequest) AppendEntriesResponse {
 	n.mu.Lock(); defer n.mu.Unlock()
 	if req.Term < n.term { return AppendEntriesResponse{Term:n.term, Success:false, MatchIndex:len(n.log)-1} }
-	if req.Term > n.term || n.state != Follower { n.becomeFollowerLocked(req.Term, req.LeaderID) }
+	termChanged := req.Term > n.term
+	if termChanged || n.state != Follower { n.becomeFollowerLocked(req.Term, req.LeaderID) }
 	n.leaderID = req.LeaderID; n.signalElectionReset()
 	if req.PrevLogIndex >= 0 && (req.PrevLogIndex >= len(n.log) || n.log[req.PrevLogIndex].Term != req.PrevLogTerm) {
 		return AppendEntriesResponse{Term:n.term, Success:false, MatchIndex:len(n.log)-1}
@@ -131,8 +167,19 @@ func (n *Node) HandleAppendEntries(req AppendEntriesRequest) AppendEntriesRespon
 		if at < len(n.log) && n.log[at].Term != entry.Term { n.log=n.log[:at] }
 		if at >= len(n.log) { n.log=append(n.log, entry) }
 	}
+	if termChanged || len(req.Entries) > 0 {
+		if n.persistLocked() != nil {
+			return AppendEntriesResponse{Term:n.term, Success:false, MatchIndex:len(n.log)-1}
+		}
+	}
 	if req.LeaderCommit > n.commitIndex {
-		n.commitIndex=min(req.LeaderCommit, len(n.log)-1); n.applyCommittedLocked()
+		previousCommit := n.commitIndex
+		n.commitIndex=min(req.LeaderCommit, len(n.log)-1)
+		if n.persistLocked() != nil {
+			n.commitIndex = previousCommit
+			return AppendEntriesResponse{Term:n.term, Success:false, MatchIndex:len(n.log)-1}
+		}
+		n.applyCommittedLocked()
 	}
 	return AppendEntriesResponse{Term:n.term, Success:true, MatchIndex:len(n.log)-1}
 }
@@ -141,6 +188,11 @@ func (n *Node) Put(key, value string) error {
 	n.mu.Lock()
 	if n.state != Leader { n.mu.Unlock(); return ErrNotLeader }
 	n.log=append(n.log, LogEntry{Term:n.term, Command:Command{Operation:"put", Key:key, Value:value}})
+	if err := n.persistLocked(); err != nil {
+		n.log = n.log[:len(n.log)-1]
+		n.mu.Unlock()
+		return err
+	}
 	target := len(n.log)-1
 	n.mu.Unlock()
 	n.replicateAll()
@@ -151,7 +203,7 @@ func (n *Node) Put(key, value string) error {
 
 func (n *Node) Get(key string) (string, bool) { n.mu.Lock(); defer n.mu.Unlock(); v,ok:=n.store[key]; return v,ok }
 func (n *Node) LeaderAddress() string { n.mu.Lock(); defer n.mu.Unlock(); return n.peers[n.leaderID] }
-func (n *Node) Status() Status { n.mu.Lock(); defer n.mu.Unlock(); return Status{ID:n.id,State:n.state,Term:n.term,LeaderID:n.leaderID,CommitIndex:n.commitIndex,LogLength:len(n.log)} }
+func (n *Node) Status() Status { n.mu.Lock(); defer n.mu.Unlock(); status:=Status{ID:n.id,State:n.state,Term:n.term,LeaderID:n.leaderID,CommitIndex:n.commitIndex,LogLength:len(n.log),StorageOK:n.storageErr==nil}; if n.storageErr!=nil {status.StorageError=n.storageErr.Error()}; return status }
 
 func (n *Node) replicateAll() {
 	n.mu.Lock()
@@ -174,7 +226,7 @@ func (n *Node) replicatePeer(term int, id, peer string) {
 		ctx,cancel:=context.WithTimeout(context.Background(),n.heartbeat); resp,err:=n.transport.AppendEntries(ctx,peer,req); cancel()
 		if err!=nil { return }
 		n.mu.Lock()
-		if resp.Term>n.term { n.becomeFollowerLocked(resp.Term,""); n.mu.Unlock(); return }
+		if resp.Term>n.term { n.becomeFollowerLocked(resp.Term,""); n.persistLocked(); n.mu.Unlock(); return }
 		if resp.Success { n.matchIndex[id]=resp.MatchIndex; n.nextIndex[id]=resp.MatchIndex+1; n.mu.Unlock(); return }
 		if n.nextIndex[id]>0 { n.nextIndex[id]-- }; n.mu.Unlock()
 	}
@@ -185,7 +237,13 @@ func (n *Node) advanceCommit() {
 	for idx:=len(n.log)-1; idx>n.commitIndex; idx-- {
 		if n.log[idx].Term!=n.term { continue }
 		count:=1; for id:=range n.peers { if id!=n.id && n.matchIndex[id]>=idx { count++ } }
-		if count>=n.quorum() { n.commitIndex=idx; n.applyCommittedLocked(); break }
+		if count>=n.quorum() {
+			previousCommit := n.commitIndex
+			n.commitIndex=idx
+			if n.persistLocked() != nil { n.commitIndex=previousCommit; return }
+			n.applyCommittedLocked()
+			break
+		}
 	}
 }
 
@@ -194,3 +252,8 @@ func (n *Node) lastLogInfoLocked()(int,int){ i:=len(n.log)-1; if i<0{return -1,0
 func (n *Node) quorum() int { return len(n.peers)/2+1 }
 func (n *Node) becomeFollowerLocked(term int, leader string){ n.state=Follower; if term>n.term { n.term=term; n.votedFor="" }; n.leaderID=leader; n.signalElectionReset() }
 func (n *Node) signalElectionReset(){ select{case n.resetElection<-struct{}{}:default:} }
+func (n *Node) persistLocked() error {
+	err := n.storage.Save(PersistentState{CurrentTerm:n.term,VotedFor:n.votedFor,Log:n.log,CommitIndex:n.commitIndex})
+	n.storageErr = err
+	return err
+}

@@ -24,12 +24,21 @@ fi
 curl --silent --fail-with-body \
   --request PUT "http://localhost:${leader_port}/kv/ci-key" \
   --header 'Content-Type: application/json' \
+  --header 'X-Client-ID: ci-client' \
+  --header 'X-Request-ID: write-1' \
+  --data '{"value":"replicated"}'
+
+curl --silent --fail-with-body \
+  --request PUT "http://localhost:${leader_port}/kv/ci-key" \
+  --header 'Content-Type: application/json' \
+  --header 'X-Client-ID: ci-client' \
+  --header 'X-Request-ID: write-1' \
   --data '{"value":"replicated"}'
 
 for port in "${ports[@]}"; do
   replicated=false
   for _ in $(seq 1 10); do
-    response=$(curl --silent "http://localhost:${port}/kv/ci-key" || true)
+    response=$(curl --silent "http://localhost:${port}/kv/ci-key?consistency=stale" || true)
     if [[ "$response" == *'"value":"replicated"'* ]]; then
       replicated=true
       break
@@ -46,7 +55,7 @@ done
 docker compose restart node3 >/dev/null
 recovered=false
 for _ in $(seq 1 15); do
-  response=$(curl --silent "http://localhost:8083/kv/ci-key" || true)
+  response=$(curl --silent "http://localhost:8083/kv/ci-key?consistency=stale" || true)
   if [[ "$response" == *'"value":"replicated"'* ]]; then
     recovered=true
     break

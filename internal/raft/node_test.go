@@ -2,6 +2,7 @@ package raft
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 )
@@ -42,4 +43,64 @@ func TestLeaderCommitsWithMajority(t *testing.T){
 	replicatedEntries := len(followerLog)
 	followerLogMu.Unlock()
 	if replicatedEntries<1 { t.Fatal("entry was not replicated") }
+}
+
+type unavailableTransport struct{}
+
+func (unavailableTransport) RequestVote(context.Context, string, RequestVoteRequest) (RequestVoteResponse, error) {
+	return RequestVoteResponse{}, errors.New("peer unavailable")
+}
+
+func (unavailableTransport) AppendEntries(context.Context, string, AppendEntriesRequest) (AppendEntriesResponse, error) {
+	return AppendEntriesResponse{}, errors.New("peer unavailable")
+}
+
+func TestLinearizableReadRequiresQuorum(t *testing.T) {
+	n := NewNode("n1", map[string]string{"n1":"one","n2":"two","n3":"three"}, unavailableTransport{})
+	n.state = Leader
+	n.term = 1
+	n.leaderID = "n1"
+	n.store["key"] = "possibly-stale"
+	if _, _, err := n.Read("key"); !errors.Is(err, ErrQuorumUnavailable) {
+		t.Fatalf("expected quorum error, got %v", err)
+	}
+}
+
+func TestLinearizableReadAfterQuorumConfirmation(t *testing.T) {
+	transport := fakeTransport{
+		append: func(r AppendEntriesRequest) AppendEntriesResponse {
+			return AppendEntriesResponse{Term:r.Term, Success:true, MatchIndex:r.PrevLogIndex+len(r.Entries)}
+		},
+	}
+	n := NewNode("n1", map[string]string{"n1":"one","n2":"two","n3":"three"}, transport)
+	n.state = Leader
+	n.term = 1
+	n.leaderID = "n1"
+	n.store["key"] = "current"
+	value, ok, err := n.Read("key")
+	if err != nil || !ok || value != "current" {
+		t.Fatalf("unexpected read: value=%q ok=%v err=%v", value, ok, err)
+	}
+}
+
+func TestDuplicateRequestIsAppliedOnce(t *testing.T) {
+	transport := fakeTransport{
+		append: func(r AppendEntriesRequest) AppendEntriesResponse {
+			return AppendEntriesResponse{Term:r.Term, Success:true, MatchIndex:r.PrevLogIndex+len(r.Entries)}
+		},
+	}
+	n := NewNode("n1", map[string]string{"n1":"one","n2":"two","n3":"three"}, transport)
+	n.state = Leader
+	n.term = 1
+	n.leaderID = "n1"
+	n.nextIndex["n2"] = 0
+	n.nextIndex["n3"] = 0
+	if err := n.PutWithRequest("client-a", "request-1", "key", "value"); err != nil { t.Fatal(err) }
+	if err := n.PutWithRequest("client-a", "request-1", "key", "value"); err != nil { t.Fatal(err) }
+	if len(n.log) != 1 {
+		t.Fatalf("duplicate request appended %d log entries", len(n.log))
+	}
+	if err := n.PutWithRequest("client-a", "request-1", "key", "different"); !errors.Is(err, ErrRequestConflict) {
+		t.Fatalf("expected request conflict, got %v", err)
+	}
 }

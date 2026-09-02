@@ -70,6 +70,22 @@ func TestNodeRestoresCommittedState(t *testing.T) {
 	}
 }
 
+func TestNodeRestoresDeduplicationState(t *testing.T) {
+	storage := NewFileStorage(t.TempDir())
+	command := Command{Operation:"put", Key:"key", Value:"first", ClientID:"client-a", RequestID:"request-1"}
+	if err := storage.Save(PersistentState{CurrentTerm:2, Log:[]LogEntry{{Term:2, Command:command}}, CommitIndex:0}); err != nil {
+		t.Fatal(err)
+	}
+	node, err := NewNodeWithStorage("node1", map[string]string{"node1":"one"}, fakeTransport{}, storage)
+	if err != nil { t.Fatal(err) }
+	node.state = Leader
+	node.leaderID = "node1"
+	if err := node.PutWithRequest("client-a", "request-1", "key", "first"); err != nil { t.Fatal(err) }
+	if len(node.log) != 1 {
+		t.Fatalf("restored duplicate appended %d entries", len(node.log))
+	}
+}
+
 func TestFileStorageRejectsCorruptState(t *testing.T) {
 	directory := t.TempDir()
 	if err := os.WriteFile(filepath.Join(directory, "raft-state.json"), []byte("not-json"), 0o600); err != nil {

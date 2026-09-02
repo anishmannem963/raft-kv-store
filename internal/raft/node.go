@@ -9,6 +9,8 @@ import (
 )
 
 var ErrNotLeader = errors.New("request must be sent to the leader")
+var ErrQuorumUnavailable = errors.New("leader could not confirm a quorum")
+var ErrRequestConflict = errors.New("request ID was already used with a different command")
 
 type Node struct {
 	mu sync.Mutex
@@ -25,6 +27,7 @@ type Node struct {
 	nextIndex map[string]int
 	matchIndex map[string]int
 	store map[string]string
+	appliedRequests map[string]Command
 	storage Storage
 	storageErr error
 	electionMin time.Duration
@@ -45,7 +48,7 @@ func NewNode(id string, peers map[string]string, transport Transport) *Node {
 
 func NewNodeWithStorage(id string, peers map[string]string, transport Transport, storage Storage) (*Node, error) {
 	n := &Node{id:id, peers:peers, transport:transport, state:Follower, commitIndex:-1, lastApplied:-1,
-		nextIndex:map[string]int{}, matchIndex:map[string]int{}, store:map[string]string{},
+		nextIndex:map[string]int{}, matchIndex:map[string]int{}, store:map[string]string{}, appliedRequests:map[string]Command{},
 		storage:storage,
 		electionMin:300*time.Millisecond, electionMax:550*time.Millisecond, heartbeat:100*time.Millisecond,
 		resetElection:make(chan struct{},1), stop:make(chan struct{}), stopped:make(chan struct{})}
@@ -185,15 +188,38 @@ func (n *Node) HandleAppendEntries(req AppendEntriesRequest) AppendEntriesRespon
 }
 
 func (n *Node) Put(key, value string) error {
+	return n.PutWithRequest("", "", key, value)
+}
+
+func (n *Node) PutWithRequest(clientID, requestID, key, value string) error {
 	n.mu.Lock()
 	if n.state != Leader { n.mu.Unlock(); return ErrNotLeader }
-	n.log=append(n.log, LogEntry{Term:n.term, Command:Command{Operation:"put", Key:key, Value:value}})
-	if err := n.persistLocked(); err != nil {
-		n.log = n.log[:len(n.log)-1]
-		n.mu.Unlock()
-		return err
+	command := Command{Operation:"put", Key:key, Value:value, ClientID:clientID, RequestID:requestID}
+	target := -1
+	if clientID != "" && requestID != "" {
+		if previous, ok := n.appliedRequests[requestKey(clientID, requestID)]; ok {
+			n.mu.Unlock()
+			if !sameWrite(previous, command) { return ErrRequestConflict }
+			return nil
+		}
+		for index := n.commitIndex + 1; index < len(n.log); index++ {
+			candidate := n.log[index].Command
+			if candidate.ClientID == clientID && candidate.RequestID == requestID {
+				target = index
+				if !sameWrite(candidate, command) { n.mu.Unlock(); return ErrRequestConflict }
+				break
+			}
+		}
 	}
-	target := len(n.log)-1
+	if target == -1 {
+		n.log=append(n.log, LogEntry{Term:n.term, Command:command})
+		if err := n.persistLocked(); err != nil {
+			n.log = n.log[:len(n.log)-1]
+			n.mu.Unlock()
+			return err
+		}
+		target = len(n.log)-1
+	}
 	n.mu.Unlock()
 	n.replicateAll()
 	n.mu.Lock(); defer n.mu.Unlock()
@@ -202,34 +228,63 @@ func (n *Node) Put(key, value string) error {
 }
 
 func (n *Node) Get(key string) (string, bool) { n.mu.Lock(); defer n.mu.Unlock(); v,ok:=n.store[key]; return v,ok }
+func (n *Node) Read(key string) (string, bool, error) {
+	n.mu.Lock()
+	if n.state != Leader { n.mu.Unlock(); return "", false, ErrNotLeader }
+	term := n.term
+	if (n.commitIndex < 0 || n.log[n.commitIndex].Term != term) && (len(n.log) == 0 || n.log[len(n.log)-1].Term != term) {
+		n.log = append(n.log, LogEntry{Term:term, Command:Command{Operation:"noop"}})
+		if err := n.persistLocked(); err != nil {
+			n.log = n.log[:len(n.log)-1]
+			n.mu.Unlock()
+			return "", false, err
+		}
+	}
+	n.mu.Unlock()
+	if !n.replicateAll() { return "", false, ErrQuorumUnavailable }
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.state != Leader || n.term != term { return "", false, ErrNotLeader }
+	if n.commitIndex < 0 || n.log[n.commitIndex].Term != term { return "", false, ErrQuorumUnavailable }
+	value, ok := n.store[key]
+	return value, ok, nil
+}
 func (n *Node) LeaderAddress() string { n.mu.Lock(); defer n.mu.Unlock(); return n.peers[n.leaderID] }
 func (n *Node) Status() Status { n.mu.Lock(); defer n.mu.Unlock(); status:=Status{ID:n.id,State:n.state,Term:n.term,LeaderID:n.leaderID,CommitIndex:n.commitIndex,LogLength:len(n.log),StorageOK:n.storageErr==nil}; if n.storageErr!=nil {status.StorageError=n.storageErr.Error()}; return status }
 
-func (n *Node) replicateAll() {
+func (n *Node) replicateAll() bool {
 	n.mu.Lock()
-	if n.state != Leader { n.mu.Unlock(); return }
+	if n.state != Leader { n.mu.Unlock(); return false }
 	term := n.term
 	n.mu.Unlock()
 	var wg sync.WaitGroup
-	for id, address := range n.peers { if id != n.id { wg.Add(1); go func(pid, peer string){ defer wg.Done(); n.replicatePeer(term,pid,peer) }(id,address) } }
-	wg.Wait(); n.advanceCommit()
+	acknowledgements := 1
+	var acknowledgementMu sync.Mutex
+	for id, address := range n.peers { if id != n.id { wg.Add(1); go func(pid, peer string){ defer wg.Done(); if n.replicatePeer(term,pid,peer) { acknowledgementMu.Lock(); acknowledgements++; acknowledgementMu.Unlock() } }(id,address) } }
+	wg.Wait()
+	n.advanceCommit()
+	acknowledgementMu.Lock()
+	hasQuorum := acknowledgements >= n.quorum()
+	acknowledgementMu.Unlock()
+	return hasQuorum
 }
 
-func (n *Node) replicatePeer(term int, id, peer string) {
+func (n *Node) replicatePeer(term int, id, peer string) bool {
 	for attempts:=0; attempts<3; attempts++ {
 		n.mu.Lock()
-		if n.state != Leader || n.term != term { n.mu.Unlock(); return }
+		if n.state != Leader || n.term != term { n.mu.Unlock(); return false }
 		next:=n.nextIndex[id]; prev:=next-1; prevTerm:=0; if prev>=0 { prevTerm=n.log[prev].Term }
 		entries:=append([]LogEntry(nil),n.log[next:]...)
 		req:=AppendEntriesRequest{Term:term,LeaderID:n.id,PrevLogIndex:prev,PrevLogTerm:prevTerm,Entries:entries,LeaderCommit:n.commitIndex}
 		n.mu.Unlock()
 		ctx,cancel:=context.WithTimeout(context.Background(),n.heartbeat); resp,err:=n.transport.AppendEntries(ctx,peer,req); cancel()
-		if err!=nil { return }
+		if err!=nil { return false }
 		n.mu.Lock()
-		if resp.Term>n.term { n.becomeFollowerLocked(resp.Term,""); n.persistLocked(); n.mu.Unlock(); return }
-		if resp.Success { n.matchIndex[id]=resp.MatchIndex; n.nextIndex[id]=resp.MatchIndex+1; n.mu.Unlock(); return }
+		if resp.Term>n.term { n.becomeFollowerLocked(resp.Term,""); n.persistLocked(); n.mu.Unlock(); return false }
+		if resp.Success { n.matchIndex[id]=resp.MatchIndex; n.nextIndex[id]=resp.MatchIndex+1; n.mu.Unlock(); return true }
 		if n.nextIndex[id]>0 { n.nextIndex[id]-- }; n.mu.Unlock()
 	}
+	return false
 }
 
 func (n *Node) advanceCommit() {
@@ -247,7 +302,7 @@ func (n *Node) advanceCommit() {
 	}
 }
 
-func (n *Node) applyCommittedLocked() { for n.lastApplied<n.commitIndex { n.lastApplied++; c:=n.log[n.lastApplied].Command; if c.Operation=="put" { n.store[c.Key]=c.Value } } }
+func (n *Node) applyCommittedLocked() { for n.lastApplied<n.commitIndex { n.lastApplied++; c:=n.log[n.lastApplied].Command; if c.Operation=="put" { n.store[c.Key]=c.Value; if c.ClientID!="" && c.RequestID!="" { n.appliedRequests[requestKey(c.ClientID,c.RequestID)]=c } } } }
 func (n *Node) lastLogInfoLocked()(int,int){ i:=len(n.log)-1; if i<0{return -1,0}; return i,n.log[i].Term }
 func (n *Node) quorum() int { return len(n.peers)/2+1 }
 func (n *Node) becomeFollowerLocked(term int, leader string){ n.state=Follower; if term>n.term { n.term=term; n.votedFor="" }; n.leaderID=leader; n.signalElectionReset() }
@@ -257,3 +312,5 @@ func (n *Node) persistLocked() error {
 	n.storageErr = err
 	return err
 }
+func requestKey(clientID, requestID string) string { return clientID+"\x00"+requestID }
+func sameWrite(left, right Command) bool { return left.Operation==right.Operation && left.Key==right.Key && left.Value==right.Value }

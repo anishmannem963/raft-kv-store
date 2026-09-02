@@ -17,6 +17,8 @@ type Command struct {
 	Operation string `json:"operation"`
 	Key       string `json:"key"`
 	Value     string `json:"value"`
+	ClientID  string `json:"client_id,omitempty"`
+	RequestID string `json:"request_id,omitempty"`
 }
 
 type RequestVoteRequest struct {

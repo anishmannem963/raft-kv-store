@@ -23,11 +23,17 @@ Write to the node whose status is `leader`, then read from a replica after the e
 ```bash
 curl -X PUT localhost:8081/kv/message \
   -H 'Content-Type: application/json' \
+  -H 'X-Client-ID: example-client' \
+  -H 'X-Request-ID: request-1' \
   -d '{"value":"hello raft"}'
-curl localhost:8082/kv/message
+curl localhost:8081/kv/message
 ```
 
 A write sent to a follower returns HTTP 307 and includes the current leader address in the JSON response.
+
+`GET /kv/{key}` is linearizable by default: the leader first ensures an entry is committed in its current term, then confirms contact with a majority before serving the value. A follower-local diagnostic read is available explicitly through `GET /kv/{key}?consistency=stale`.
+
+Every write requires `X-Client-ID` and `X-Request-ID`. Retrying the same client/request pair with the same key and value returns success without appending another log entry. Reusing the pair for a different command returns HTTP 409.
 
 ## Current guarantees
 
@@ -36,6 +42,8 @@ A write sent to a follower returns HTTP 307 and includes the current leader addr
 - A write is applied only after replication to a majority
 - A three-node cluster can continue committing with one unavailable follower
 - Higher-term RPC responses force a leader or candidate to step down
+- Default reads are served only by a leader that confirms a current-term quorum
+- Committed client request IDs survive restarts and make write retries idempotent
 
 Each Docker node stores its current term, vote, log, and commit index in a separate named volume. Updates use a write-sync-rename-directory-sync sequence so an acknowledged state transition is not left only in process memory. A restarted node rebuilds its key-value state machine from committed log entries.
 
@@ -53,7 +61,7 @@ go test -race ./...
 - [x] Replicated `PUT` and local `GET`
 - [x] Three-node Docker Compose cluster
 - [x] Durable log, commit index, and term/vote persistence
-- [ ] Linearizable reads and request deduplication
+- [x] Linearizable reads and request deduplication
 - [ ] Snapshotting and log compaction
 - [x] Automated container-restart recovery test
 - [ ] Automated leader-failure and network-partition tests

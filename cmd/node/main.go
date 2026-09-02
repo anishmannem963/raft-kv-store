@@ -46,14 +46,25 @@ func main() {
 	mux.HandleFunc("PUT /kv/{key}", jsonHandler(func(r *http.Request) (any, int) {
 		var body struct{ Value string `json:"value"` }
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil { return apiError{err.Error()}, http.StatusBadRequest }
-		if err := node.Put(r.PathValue("key"), body.Value); err != nil {
+		clientID := r.Header.Get("X-Client-ID")
+		requestID := r.Header.Get("X-Request-ID")
+		if clientID == "" || requestID == "" { return apiError{"X-Client-ID and X-Request-ID headers are required"}, http.StatusBadRequest }
+		if err := node.PutWithRequest(clientID, requestID, r.PathValue("key"), body.Value); err != nil {
 			if errors.Is(err, raft.ErrNotLeader) { return map[string]string{"error":err.Error(),"leader":node.LeaderAddress()}, http.StatusTemporaryRedirect }
+			if errors.Is(err, raft.ErrRequestConflict) { return apiError{err.Error()}, http.StatusConflict }
 			return apiError{err.Error()}, http.StatusServiceUnavailable
 		}
 		return map[string]string{"status":"committed"}, http.StatusCreated
 	}))
 	mux.HandleFunc("GET /kv/{key}", jsonHandler(func(r *http.Request) (any, int) {
-		value, ok := node.Get(r.PathValue("key")); if !ok { return apiError{"key not found"}, http.StatusNotFound }
+		if r.URL.Query().Get("consistency") == "stale" {
+			value, ok := node.Get(r.PathValue("key")); if !ok { return apiError{"key not found"}, http.StatusNotFound }
+			return map[string]string{"key":r.PathValue("key"),"value":value,"consistency":"stale"}, http.StatusOK
+		}
+		value, ok, err := node.Read(r.PathValue("key"))
+		if errors.Is(err, raft.ErrNotLeader) { return map[string]string{"error":err.Error(),"leader":node.LeaderAddress()}, http.StatusTemporaryRedirect }
+		if err != nil { return apiError{err.Error()}, http.StatusServiceUnavailable }
+		if !ok { return apiError{"key not found"}, http.StatusNotFound }
 		return map[string]string{"key":r.PathValue("key"),"value":value}, http.StatusOK
 	}))
 	mux.HandleFunc("GET /status", jsonHandler(func(_ *http.Request) (any, int) { return node.Status(), http.StatusOK }))

@@ -21,7 +21,14 @@ func main() {
 	peerList := flag.String("peers", env("PEERS", "node1=http://localhost:8080"), "comma-separated id=url peers")
 	flag.Parse()
 	peers := parsePeers(*peerList)
-	node := raft.NewNode(*id, peers, raft.NewHTTPTransport(250*time.Millisecond))
+	var storage raft.Storage = &raft.MemoryStorage{}
+	if dataDir := os.Getenv("DATA_DIR"); dataDir != "" {
+		storage = raft.NewFileStorage(dataDir)
+	}
+	node, err := raft.NewNodeWithStorage(*id, peers, raft.NewHTTPTransport(250*time.Millisecond), storage)
+	if err != nil {
+		log.Fatalf("load raft state: %v", err)
+	}
 	node.Start()
 	defer node.Stop()
 

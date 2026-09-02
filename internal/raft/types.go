@@ -53,4 +53,6 @@ type Status struct {
 	LeaderID    string `json:"leader_id,omitempty"`
 	CommitIndex int    `json:"commit_index"`
 	LogLength   int    `json:"log_length"`
+	StorageOK   bool   `json:"storage_ok"`
+	StorageError string `json:"storage_error,omitempty"`
 }

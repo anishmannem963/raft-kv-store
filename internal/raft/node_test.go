@@ -2,6 +2,7 @@ package raft
 
 import (
 	"context"
+	"sync"
 	"testing"
 )
 
@@ -27,14 +28,18 @@ func TestFollowerAppendsAndAppliesCommittedEntry(t *testing.T){
 }
 
 func TestLeaderCommitsWithMajority(t *testing.T){
+	var followerLogMu sync.Mutex
 	var followerLog []LogEntry
 	f:=fakeTransport{
 		vote:func(r RequestVoteRequest)RequestVoteResponse{return RequestVoteResponse{Term:r.Term,VoteGranted:true}},
-		append:func(r AppendEntriesRequest)AppendEntriesResponse{ followerLog=append(followerLog,r.Entries...); return AppendEntriesResponse{Term:r.Term,Success:true,MatchIndex:r.PrevLogIndex+len(r.Entries)} },
+		append:func(r AppendEntriesRequest)AppendEntriesResponse{ followerLogMu.Lock(); followerLog=append(followerLog,r.Entries...); followerLogMu.Unlock(); return AppendEntriesResponse{Term:r.Term,Success:true,MatchIndex:r.PrevLogIndex+len(r.Entries)} },
 	}
 	n:=NewNode("n1",map[string]string{"n1":"one","n2":"two","n3":"three"},f)
 	n.state=Leader; n.term=1; n.leaderID="n1"; n.nextIndex["n2"]=0; n.nextIndex["n3"]=0
 	if err:=n.Put("project","raft-kv-store"); err!=nil { t.Fatal(err) }
 	if value,ok:=n.Get("project"); !ok || value!="raft-kv-store" { t.Fatalf("command not applied: %q",value) }
-	if len(followerLog)<1 { t.Fatal("entry was not replicated") }
+	followerLogMu.Lock()
+	replicatedEntries := len(followerLog)
+	followerLogMu.Unlock()
+	if replicatedEntries<1 { t.Fatal("entry was not replicated") }
 }

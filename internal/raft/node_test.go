@@ -10,9 +10,11 @@ import (
 type fakeTransport struct {
 	vote func(RequestVoteRequest) RequestVoteResponse
 	append func(AppendEntriesRequest) AppendEntriesResponse
+	snapshot func(InstallSnapshotRequest) InstallSnapshotResponse
 }
 func (f fakeTransport) RequestVote(_ context.Context,_ string,r RequestVoteRequest)(RequestVoteResponse,error){ return f.vote(r),nil }
 func (f fakeTransport) AppendEntries(_ context.Context,_ string,r AppendEntriesRequest)(AppendEntriesResponse,error){ return f.append(r),nil }
+func (f fakeTransport) InstallSnapshot(_ context.Context,_ string,r InstallSnapshotRequest)(InstallSnapshotResponse,error){ if f.snapshot!=nil { return f.snapshot(r),nil }; return InstallSnapshotResponse{Term:r.Term,Success:true,MatchIndex:r.Snapshot.LastIncludedIndex},nil }
 
 func TestFollowerRejectsStaleVote(t *testing.T){
 	n:=NewNode("n1",map[string]string{"n1":"one"},fakeTransport{})
@@ -53,6 +55,10 @@ func (unavailableTransport) RequestVote(context.Context, string, RequestVoteRequ
 
 func (unavailableTransport) AppendEntries(context.Context, string, AppendEntriesRequest) (AppendEntriesResponse, error) {
 	return AppendEntriesResponse{}, errors.New("peer unavailable")
+}
+
+func (unavailableTransport) InstallSnapshot(context.Context, string, InstallSnapshotRequest) (InstallSnapshotResponse, error) {
+	return InstallSnapshotResponse{}, errors.New("peer unavailable")
 }
 
 func TestLinearizableReadRequiresQuorum(t *testing.T) {

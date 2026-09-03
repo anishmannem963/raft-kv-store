@@ -16,6 +16,7 @@ type PersistentState struct {
 	VotedFor    string     `json:"voted_for,omitempty"`
 	Log         []LogEntry `json:"log"`
 	CommitIndex int        `json:"commit_index"`
+	Snapshot    *Snapshot  `json:"snapshot,omitempty"`
 }
 
 type Storage interface {
@@ -128,5 +129,27 @@ func syncDirectory(path string) error {
 
 func clonePersistentState(state PersistentState) PersistentState {
 	state.Log = append([]LogEntry(nil), state.Log...)
+	if state.Snapshot != nil {
+		copy := cloneSnapshot(*state.Snapshot)
+		state.Snapshot = &copy
+	}
 	return state
+}
+
+func cloneSnapshot(snapshot Snapshot) Snapshot {
+	snapshot.Store = cloneStringMap(snapshot.Store)
+	snapshot.AppliedRequests = cloneCommandMap(snapshot.AppliedRequests)
+	return snapshot
+}
+
+func cloneStringMap(source map[string]string) map[string]string {
+	copy := make(map[string]string, len(source))
+	for key, value := range source { copy[key] = value }
+	return copy
+}
+
+func cloneCommandMap(source map[string]Command) map[string]Command {
+	copy := make(map[string]Command, len(source))
+	for key, value := range source { copy[key] = value }
+	return copy
 }

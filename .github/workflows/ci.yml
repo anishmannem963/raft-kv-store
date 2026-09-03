@@ -25,3 +25,6 @@ jobs:
           ./scripts/network-partition-test.sh | tee /tmp/partition-result.txt
           echo '### Network partition recovery' >> "$GITHUB_STEP_SUMMARY"
           tail -1 /tmp/partition-result.txt >> "$GITHUB_STEP_SUMMARY"
+          ./scripts/snapshot-test.sh | tee /tmp/snapshot-result.txt
+          echo '### Snapshot installation' >> "$GITHUB_STEP_SUMMARY"
+          tail -1 /tmp/snapshot-result.txt >> "$GITHUB_STEP_SUMMARY"

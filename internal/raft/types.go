@@ -48,6 +48,25 @@ type AppendEntriesResponse struct {
 	MatchIndex int  `json:"match_index"`
 }
 
+type Snapshot struct {
+	LastIncludedIndex int                `json:"last_included_index"`
+	LastIncludedTerm  int                `json:"last_included_term"`
+	Store             map[string]string  `json:"store"`
+	AppliedRequests   map[string]Command `json:"applied_requests"`
+}
+
+type InstallSnapshotRequest struct {
+	Term     int      `json:"term"`
+	LeaderID string   `json:"leader_id"`
+	Snapshot Snapshot `json:"snapshot"`
+}
+
+type InstallSnapshotResponse struct {
+	Term       int  `json:"term"`
+	Success    bool `json:"success"`
+	MatchIndex int  `json:"match_index"`
+}
+
 type Status struct {
 	ID          string `json:"id"`
 	State       State  `json:"state"`
@@ -55,6 +74,7 @@ type Status struct {
 	LeaderID    string `json:"leader_id,omitempty"`
 	CommitIndex int    `json:"commit_index"`
 	LogLength   int    `json:"log_length"`
+	SnapshotIndex int  `json:"snapshot_index"`
 	StorageOK   bool   `json:"storage_ok"`
 	StorageError string `json:"storage_error,omitempty"`
 }

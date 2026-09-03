@@ -1,8 +1,8 @@
 # Fault-Tolerant Distributed Key-Value Store
 
-An educational distributed key-value store implemented in Go. It implements a Raft-style replicated state machine with randomized leader elections, heartbeats, majority-quorum log replication, durable node state, and an HTTP API.
+An educational distributed key-value store implemented in Go. It implements a Raft-style replicated state machine with randomized leader elections, heartbeats, majority-quorum log replication, durable node state, snapshots, and an HTTP API.
 
-> This is an active learning project, not a production database. Snapshots, network-partition testing, and full Raft safety verification are planned milestones.
+> This is an active learning project, not a production database. Full Raft safety verification and broader adversarial testing remain planned milestones.
 
 ## Run a three-node cluster
 
@@ -59,6 +59,8 @@ The CI fault-injection test identifies the active leader, commits a value, stops
 
 The partition test keeps the old leader process alive but disconnects it from the cluster network. It verifies that the isolated leader cannot serve a linearizable read, the two-node majority elects a leader and commits, and the healed cluster converges to one leader with identical committed state. Election and healing durations are recorded in the Actions summary.
 
+Committed logs are compacted into snapshots after 100 entries. A snapshot contains the key/value state and request-deduplication records at an absolute log index and term. When a follower falls behind the compacted prefix, the leader installs the snapshot and then streams the remaining log suffix. CI validates this by stopping a follower for 105 writes and requiring it to recover after restart.
+
 ## Roadmap
 
 - [x] Leader election and heartbeats
@@ -66,7 +68,7 @@ The partition test keeps the old leader process alive but disconnects it from th
 - [x] Three-node Docker Compose cluster
 - [x] Durable log, commit index, and term/vote persistence
 - [x] Linearizable reads and request deduplication
-- [ ] Snapshotting and log compaction
+- [x] Snapshotting, log compaction, and lagging-follower installation
 - [x] Automated container-restart recovery test
 - [x] Automated leader-failure recovery test
 - [x] Automated network-partition recovery test

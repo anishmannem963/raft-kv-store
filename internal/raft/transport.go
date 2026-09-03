@@ -12,6 +12,7 @@ import (
 type Transport interface {
 	RequestVote(context.Context, string, RequestVoteRequest) (RequestVoteResponse, error)
 	AppendEntries(context.Context, string, AppendEntriesRequest) (AppendEntriesResponse, error)
+	InstallSnapshot(context.Context, string, InstallSnapshotRequest) (InstallSnapshotResponse, error)
 }
 
 type HTTPTransport struct{ client *http.Client }
@@ -29,6 +30,12 @@ func (t *HTTPTransport) RequestVote(ctx context.Context, peer string, in Request
 func (t *HTTPTransport) AppendEntries(ctx context.Context, peer string, in AppendEntriesRequest) (AppendEntriesResponse, error) {
 	var out AppendEntriesResponse
 	err := t.post(ctx, peer+"/raft/append", in, &out)
+	return out, err
+}
+
+func (t *HTTPTransport) InstallSnapshot(ctx context.Context, peer string, in InstallSnapshotRequest) (InstallSnapshotResponse, error) {
+	var out InstallSnapshotResponse
+	err := t.post(ctx, peer+"/raft/snapshot", in, &out)
 	return out, err
 }
 

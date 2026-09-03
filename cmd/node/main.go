@@ -43,6 +43,11 @@ func main() {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil { return apiError{err.Error()}, http.StatusBadRequest }
 		return node.HandleAppendEntries(req), http.StatusOK
 	}))
+	mux.HandleFunc("POST /raft/snapshot", jsonHandler(func(r *http.Request) (any, int) {
+		var req raft.InstallSnapshotRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil { return apiError{err.Error()}, http.StatusBadRequest }
+		return node.HandleInstallSnapshot(req), http.StatusOK
+	}))
 	mux.HandleFunc("PUT /kv/{key}", jsonHandler(func(r *http.Request) (any, int) {
 		var body struct{ Value string `json:"value"` }
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil { return apiError{err.Error()}, http.StatusBadRequest }

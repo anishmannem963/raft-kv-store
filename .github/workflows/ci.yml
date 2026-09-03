@@ -22,3 +22,6 @@ jobs:
           ./scripts/leader-failure-test.sh | tee /tmp/failover-result.txt
           echo '### Leader failover' >> "$GITHUB_STEP_SUMMARY"
           tail -1 /tmp/failover-result.txt >> "$GITHUB_STEP_SUMMARY"
+          ./scripts/network-partition-test.sh | tee /tmp/partition-result.txt
+          echo '### Network partition recovery' >> "$GITHUB_STEP_SUMMARY"
+          tail -1 /tmp/partition-result.txt >> "$GITHUB_STEP_SUMMARY"

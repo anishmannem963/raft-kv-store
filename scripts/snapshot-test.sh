@@ -18,15 +18,10 @@ find_leader() {
 }
 
 leader_port=$(find_leader) || { echo "No leader found"; exit 1; }
-
 lagging_port=""
-for port in "${ports[@]}"; do
-  if [[ "$port" != "$leader_port" ]]; then lagging_port=$port; break; fi
-done
-lagging_service=${services[$lagging_port]}
-docker compose stop "$lagging_service" >/dev/null
 
-for index in $(seq 1 105); do
+commit_write() {
+  local index=$1
   committed=false
   for _ in $(seq 1 100); do
     http_status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
@@ -48,6 +43,21 @@ for index in $(seq 1 105); do
     exit 1
   fi
   sleep 0.01
+}
+
+for index in $(seq 1 90); do
+  commit_write "$index"
+done
+
+leader_port=$(find_leader) || { echo "No leader found before follower outage"; exit 1; }
+for port in "${ports[@]}"; do
+  if [[ "$port" != "$leader_port" ]]; then lagging_port=$port; break; fi
+done
+lagging_service=${services[$lagging_port]}
+docker compose stop "$lagging_service" >/dev/null
+
+for index in $(seq 91 105); do
+  commit_write "$index"
 done
 
 leader_status=$(curl --silent --fail "http://localhost:${leader_port}/status")

@@ -83,6 +83,8 @@ Run the complete failure-recovery matrix with:
 
 The 50 default scenarios use clean cluster volumes and cover leader process failures, live leader isolation, snapshot recovery for lagging followers, and durable container restarts. Each scenario writes a log and NDJSON record. `summary.json` reports pass rate and per-category recovery, election, and healing durations. Pull requests execute one scenario from every category; merging fault-matrix changes runs the complete suite automatically.
 
+Raft RPCs deliberately use fresh HTTP connections so a Docker network disconnection immediately affects the next quorum check instead of allowing a pooled socket established before isolation to mask the partition.
+
 Committed logs are compacted into snapshots after 100 entries. A snapshot contains the key/value state and request-deduplication records at an absolute log index and term. When a follower falls behind the compacted prefix, the leader installs the snapshot and then streams the remaining log suffix. CI validates this by stopping a follower for 105 writes and requiring it to recover after restart.
 
 ## Roadmap

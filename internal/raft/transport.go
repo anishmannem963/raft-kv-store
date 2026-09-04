@@ -18,7 +18,10 @@ type Transport interface {
 type HTTPTransport struct{ client *http.Client }
 
 func NewHTTPTransport(timeout time.Duration) *HTTPTransport {
-	return &HTTPTransport{client: &http.Client{Timeout: timeout}}
+	return &HTTPTransport{client: &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{DisableKeepAlives: true},
+	}}
 }
 
 func (t *HTTPTransport) RequestVote(ctx context.Context, peer string, in RequestVoteRequest) (RequestVoteResponse, error) {

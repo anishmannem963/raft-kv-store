@@ -1,0 +1,69 @@
+name: Release artifacts
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+      - run: go test -race ./...
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+      - name: Build archive
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+        run: |
+          set -euo pipefail
+          package="raft-kv-store-${GITHUB_REF_NAME}-${GOOS}-${GOARCH}"
+          mkdir -p "dist/${package}"
+          extension=''
+          if [[ "$GOOS" == 'windows' ]]; then extension='.exe'; fi
+          go build -trimpath -ldflags='-s -w' -o "dist/${package}/raft-kv-node${extension}" ./cmd/node
+          go build -trimpath -ldflags='-s -w' -o "dist/${package}/raft-kv-benchmark${extension}" ./cmd/benchmark
+          cp README.md LICENSE CHANGELOG.md "dist/${package}/"
+          if [[ "$GOOS" == 'windows' ]]; then
+            (cd dist && zip -r "${package}.zip" "${package}" && sha256sum "${package}.zip" > "${package}.zip.sha256")
+          else
+            (cd dist && tar -czf "${package}.tar.gz" "${package}" && sha256sum "${package}.tar.gz" > "${package}.tar.gz.sha256")
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: raft-kv-store-${{ github.ref_name }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+            dist/*.zip
+            dist/*.zip.sha256
+          if-no-files-found: error

@@ -36,10 +36,10 @@ jobs:
       - name: Run fault matrix
         run: >-
           ./scripts/fault-matrix.sh
-          '${{ inputs.leader_scenarios }}'
-          '${{ inputs.partition_scenarios }}'
-          '${{ inputs.snapshot_scenarios }}'
-          '${{ inputs.restart_scenarios }}'
+          '${{ inputs.leader_scenarios || '15' }}'
+          '${{ inputs.partition_scenarios || '15' }}'
+          '${{ inputs.snapshot_scenarios || '10' }}'
+          '${{ inputs.restart_scenarios || '10' }}'
           fault-matrix-results
       - if: always()
         uses: actions/upload-artifact@v4

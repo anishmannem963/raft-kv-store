@@ -31,7 +31,13 @@ jobs:
         with:
           go-version: '1.23.x'
       - name: Run benchmark suite
-        run: ./scripts/benchmark-suite.sh '${{ inputs.requests }}' '${{ inputs.repetitions }}' '${{ inputs.concurrency }}' benchmark-suite-results 10m
+        run: >-
+          ./scripts/benchmark-suite.sh
+          '${{ inputs.requests || '10000' }}'
+          '${{ inputs.repetitions || '5' }}'
+          '${{ inputs.concurrency || '1 8 16' }}'
+          benchmark-suite-results
+          10m
       - uses: actions/upload-artifact@v4
         with:
           name: benchmark-suite-results

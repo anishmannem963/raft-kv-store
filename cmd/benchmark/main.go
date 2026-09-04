@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -116,7 +115,7 @@ func main() {
 func write(ctx context.Context, client *http.Client, endpoints []string, runID string, index int) error {
 	body := []byte(fmt.Sprintf(`{"value":"value-%d"}`, index))
 	key := fmt.Sprintf("bench-%s-%08d", runID, index)
-	for attempt := 0; attempt < 20; attempt++ {
+	for {
 		for _, endpoint := range endpoints {
 			req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint+"/kv/"+key, bytes.NewReader(body))
 			if err != nil {
@@ -141,7 +140,6 @@ func write(ctx context.Context, client *http.Client, endpoints []string, runID s
 		case <-time.After(25 * time.Millisecond):
 		}
 	}
-	return errors.New("write retries exhausted")
 }
 
 func waitConvergence(ctx context.Context, client *http.Client, endpoints []string, requests int) ([]status, error) {
@@ -165,15 +163,8 @@ func waitConvergence(ctx context.Context, client *http.Client, endpoints []strin
 			}
 			statuses = append(statuses, item)
 		}
-		if valid && len(statuses) > 0 {
-			first := statuses[0]
-			equal := first.KeyCount >= requests && first.StateHash != ""
-			for _, item := range statuses[1:] {
-				equal = equal && item.CommitIndex == first.CommitIndex && item.KeyCount == first.KeyCount && item.StateHash == first.StateHash
-			}
-			if equal {
-				return statuses, nil
-			}
+		if valid && statusesConverged(statuses, requests) {
+			return statuses, nil
 		}
 		select {
 		case <-ctx.Done():
@@ -181,6 +172,26 @@ func waitConvergence(ctx context.Context, client *http.Client, endpoints []strin
 		case <-ticker.C:
 		}
 	}
+}
+
+func statusesConverged(statuses []status, minimumKeys int) bool {
+	if len(statuses) == 0 {
+		return false
+	}
+	first := statuses[0]
+	if first.KeyCount < minimumKeys || first.StateHash == "" {
+		return false
+	}
+	leaders := 0
+	for _, item := range statuses {
+		if item.State == "leader" {
+			leaders++
+		}
+		if item.CommitIndex != first.CommitIndex || item.KeyCount != first.KeyCount || item.StateHash != first.StateHash {
+			return false
+		}
+	}
+	return leaders == 1
 }
 
 func percentile(values []time.Duration, p float64) float64 {

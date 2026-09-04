@@ -27,6 +27,15 @@ A write is acknowledged only after a majority has replicated it and the leader h
 - [Benchmark methodology and results](docs/benchmarks.md)
 - [Fault-injection methodology and results](docs/fault-testing.md)
 
+## Verified release evidence
+
+- **150,000/150,000 writes committed** across 15 independent 10,000-write runs
+- **Zero benchmark failures** and complete commit-index, key-count, and state-hash convergence
+- **50/50 fault scenarios passed** across leader crashes, live partitions, durable restarts, and snapshot recovery
+- Mean replacement election: **440.5 ms** after a leader crash and **436.3 ms** after leader isolation
+
+Results were measured on GitHub-hosted runners. See the methodology documents for workload details and interpretation limits.
+
 ## Run a three-node cluster
 
 ```bash

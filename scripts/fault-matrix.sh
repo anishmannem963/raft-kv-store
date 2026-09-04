@@ -42,6 +42,8 @@ run_scenario() {
   if ! "$script" >>"$log" 2>&1; then
     passed=false
     failures=$((failures + 1))
+    echo "Failure log for ${name}:"
+    tail -80 "$log"
   fi
   completed_ms=$(date +%s%3N)
   duration_ms=$((completed_ms - started_ms))

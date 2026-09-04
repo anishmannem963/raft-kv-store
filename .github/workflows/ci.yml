@@ -38,6 +38,7 @@ jobs:
           ./scripts/benchmark-suite.sh 40 2 "1 4" benchmark-suite-results 2m
           ./scripts/fault-matrix.sh 1 1 1 1 fault-matrix-results
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: ci-benchmark-results
           path: |

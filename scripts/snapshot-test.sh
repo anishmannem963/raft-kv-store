@@ -29,12 +29,13 @@ docker compose stop "$lagging_service" >/dev/null
 for index in $(seq 1 105); do
   committed=false
   for _ in $(seq 1 100); do
-    if curl --silent --fail \
+    http_status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
       --request PUT "http://localhost:${leader_port}/kv/snapshot-${index}" \
       --header 'Content-Type: application/json' \
       --header 'X-Client-ID: snapshot-test' \
       --header "X-Request-ID: write-${index}" \
-      --data "{\"value\":\"value-${index}\"}" >/dev/null; then
+      --data "{\"value\":\"value-${index}\"}" || true)
+    if [[ "$http_status" == 201 ]]; then
       committed=true
       break
     fi

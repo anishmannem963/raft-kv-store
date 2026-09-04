@@ -4,15 +4,20 @@ set -euo pipefail
 ports=(8081 8082 8083)
 declare -A services=([8081]=node1 [8082]=node2 [8083]=node3)
 
-leader_port=""
-for _ in $(seq 1 300); do
-  for port in "${ports[@]}"; do
-    status=$(curl --silent --fail "http://localhost:${port}/status" 2>/dev/null || true)
-    if [[ "$status" == *'"state":"leader"'* ]]; then leader_port=$port; break 2; fi
+find_leader() {
+  local excluded_port=${1:-}
+  for _ in $(seq 1 300); do
+    for port in "${ports[@]}"; do
+      [[ "$port" == "$excluded_port" ]] && continue
+      status=$(curl --silent --fail "http://localhost:${port}/status" 2>/dev/null || true)
+      if [[ "$status" == *'"state":"leader"'* ]]; then echo "$port"; return 0; fi
+    done
+    sleep 0.05
   done
-  sleep 0.05
-done
-if [[ -z "$leader_port" ]]; then echo "No leader found"; exit 1; fi
+  return 1
+}
+
+leader_port=$(find_leader) || { echo "No leader found"; exit 1; }
 
 lagging_port=""
 for port in "${ports[@]}"; do
@@ -22,12 +27,24 @@ lagging_service=${services[$lagging_port]}
 docker compose stop "$lagging_service" >/dev/null
 
 for index in $(seq 1 105); do
-  curl --silent --fail-with-body \
-    --request PUT "http://localhost:${leader_port}/kv/snapshot-${index}" \
-    --header 'Content-Type: application/json' \
-    --header 'X-Client-ID: snapshot-test' \
-    --header "X-Request-ID: write-${index}" \
-    --data "{\"value\":\"value-${index}\"}" >/dev/null
+  committed=false
+  for _ in $(seq 1 20); do
+    if curl --silent --fail \
+      --request PUT "http://localhost:${leader_port}/kv/snapshot-${index}" \
+      --header 'Content-Type: application/json' \
+      --header 'X-Client-ID: snapshot-test' \
+      --header "X-Request-ID: write-${index}" \
+      --data "{\"value\":\"value-${index}\"}" >/dev/null; then
+      committed=true
+      break
+    fi
+    if candidate=$(find_leader "$lagging_port"); then leader_port=$candidate; fi
+    sleep 0.05
+  done
+  if [[ "$committed" != true ]]; then
+    echo "Snapshot write ${index} did not commit after retries"
+    exit 1
+  fi
 done
 
 leader_status=$(curl --silent --fail "http://localhost:${leader_port}/status")

@@ -68,13 +68,15 @@ type InstallSnapshotResponse struct {
 }
 
 type Status struct {
-	ID          string `json:"id"`
-	State       State  `json:"state"`
-	Term        int    `json:"term"`
-	LeaderID    string `json:"leader_id,omitempty"`
-	CommitIndex int    `json:"commit_index"`
-	LogLength   int    `json:"log_length"`
-	SnapshotIndex int  `json:"snapshot_index"`
-	StorageOK   bool   `json:"storage_ok"`
-	StorageError string `json:"storage_error,omitempty"`
+	ID            string `json:"id"`
+	State         State  `json:"state"`
+	Term          int    `json:"term"`
+	LeaderID      string `json:"leader_id,omitempty"`
+	CommitIndex   int    `json:"commit_index"`
+	LogLength     int    `json:"log_length"`
+	SnapshotIndex int    `json:"snapshot_index"`
+	KeyCount      int    `json:"key_count"`
+	StateHash     string `json:"state_hash"`
+	StorageOK     bool   `json:"storage_ok"`
+	StorageError  string `json:"storage_error,omitempty"`
 }

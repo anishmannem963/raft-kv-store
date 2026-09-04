@@ -14,6 +14,7 @@ jobs:
       - run: go vet ./...
       - run: go test -race -count=5 ./...
       - run: go build ./cmd/node
+      - run: go build ./cmd/benchmark
       - name: Verify replication and leader failover
         run: |
           docker compose up --build --detach
@@ -28,3 +29,8 @@ jobs:
           ./scripts/snapshot-test.sh | tee /tmp/snapshot-result.txt
           echo '### Snapshot installation' >> "$GITHUB_STEP_SUMMARY"
           tail -1 /tmp/snapshot-result.txt >> "$GITHUB_STEP_SUMMARY"
+          ./scripts/benchmark.sh 300 8 benchmark-results.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-benchmark-results
+          path: benchmark-results.json

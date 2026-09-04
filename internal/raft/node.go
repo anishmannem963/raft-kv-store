@@ -2,8 +2,11 @@ package raft
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"math/rand"
+	"sort"
 	"sync"
 	"time"
 )
@@ -192,7 +195,7 @@ func (n *Node) Read(key string) (string,bool,error) {
 }
 
 func (n *Node) LeaderAddress() string { n.mu.Lock(); defer n.mu.Unlock(); return n.peers[n.leaderID] }
-func (n *Node) Status() Status { n.mu.Lock(); defer n.mu.Unlock(); s:=Status{ID:n.id,State:n.state,Term:n.term,LeaderID:n.leaderID,CommitIndex:n.commitIndex,LogLength:len(n.log),SnapshotIndex:n.snapshot.LastIncludedIndex,StorageOK:n.storageErr==nil}; if n.storageErr!=nil { s.StorageError=n.storageErr.Error() }; return s }
+func (n *Node) Status() Status { n.mu.Lock(); defer n.mu.Unlock(); s:=Status{ID:n.id,State:n.state,Term:n.term,LeaderID:n.leaderID,CommitIndex:n.commitIndex,LogLength:len(n.log),SnapshotIndex:n.snapshot.LastIncludedIndex,KeyCount:len(n.store),StateHash:stateHash(n.store),StorageOK:n.storageErr==nil}; if n.storageErr!=nil { s.StorageError=n.storageErr.Error() }; return s }
 
 func (n *Node) replicateAll() bool {
 	n.mu.Lock(); if n.state!=Leader { n.mu.Unlock(); return false }; term:=n.term; n.mu.Unlock()
@@ -244,3 +247,8 @@ func (n *Node) signalElectionReset() { select { case n.resetElection<-struct{}{}
 func (n *Node) persistLocked() error { snapshot:=cloneSnapshot(n.snapshot); err:=n.storage.Save(PersistentState{CurrentTerm:n.term,VotedFor:n.votedFor,Log:n.log,CommitIndex:n.commitIndex,Snapshot:&snapshot}); n.storageErr=err; return err }
 func requestKey(clientID,requestID string) string { return clientID+"\x00"+requestID }
 func sameWrite(left,right Command) bool { return left.Operation==right.Operation && left.Key==right.Key && left.Value==right.Value }
+func stateHash(store map[string]string) string {
+	keys:=make([]string,0,len(store)); for key:=range store { keys=append(keys,key) }; sort.Strings(keys)
+	hash:=sha256.New(); for _,key:=range keys { hash.Write([]byte(key)); hash.Write([]byte{0}); hash.Write([]byte(store[key])); hash.Write([]byte{0}) }
+	return hex.EncodeToString(hash.Sum(nil))
+}

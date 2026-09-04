@@ -24,14 +24,14 @@ The `Fault Matrix` GitHub Actions workflow runs the same defaults and uploads th
 ## Latest verified results
 
 <!-- FAULT_RESULTS_START -->
-Post-Milestone-9 run [#33897246922](https://github.com/anishmannem963/raft-kv-store/actions/runs/33897246922), commit `16932f6`, passed **50/50 scenarios (100%)** with no failures.
+Post-release-hardening run [#33902571464](https://github.com/anishmannem963/raft-kv-store/actions/runs/33902571464), commit `e5ae87a`, passed **50/50 scenarios (100%)** with no failures.
 
 | Category | Passed | Mean scenario | Mean election | Max election | Mean healing | Max healing |
 |---|---:|---:|---:|---:|---:|---:|
-| Leader process failure | 15/15 | 1,175 ms | 471.9 ms | 840 ms | — | — |
-| Live network partition | 15/15 | 1,233.2 ms | 433.5 ms | 496 ms | 120.7 ms | 185 ms |
-| Snapshot recovery | 10/10 | 3,399.4 ms | — | — | — | — |
-| Durable container restart | 10/10 | 2,294.9 ms | — | — | — | — |
+| Leader process failure | 15/15 | 1,158.4 ms | 440.5 ms | 520 ms | — | — |
+| Live network partition | 15/15 | 1,216.1 ms | 436.3 ms | 543 ms | 113.3 ms | 180 ms |
+| Snapshot recovery | 10/10 | 3,394.4 ms | — | — | — | — |
+| Durable container restart | 10/10 | 2,391.3 ms | — | — | — | — |
 
 The workflow artifact contains 50 individual logs, the NDJSON records, and the aggregate `summary.json`.
 <!-- FAULT_RESULTS_END -->

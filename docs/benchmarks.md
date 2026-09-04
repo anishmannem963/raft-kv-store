@@ -21,10 +21,16 @@ The same full suite is available through the `Benchmark` GitHub Actions workflow
 
 ## Latest verified results
 
-The release table is populated from the post-Milestone-9 GitHub Actions artifact so it reflects the corrected leader election behavior.
+Post-release-hardening run [#33902571389](https://github.com/anishmannem963/raft-kv-store/actions/runs/33902571389), commit `e5ae87a`, completed 15 independent runs with **150,000/150,000 successful writes**, zero failures, and full three-replica convergence in every run.
 
 <!-- BENCHMARK_RESULTS_START -->
-Results pending completion of the release evidence workflow.
+| Concurrency | Runs | Successful writes | Mean throughput | Mean p50 | Mean p95 | Mean p99 | Max p99 | Converged |
+|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| 1 | 5 | 50,000/50,000 | 21.52 ops/s | 45.97 ms | 86.20 ms | 106.59 ms | 111.22 ms | Yes |
+| 8 | 5 | 50,000/50,000 | 24.99 ops/s | 325.18 ms | 576.37 ms | 609.42 ms | 615.61 ms | Yes |
+| 16 | 5 | 50,000/50,000 | 25.50 ops/s | 625.29 ms | 1,134.82 ms | 1,206.84 ms | 1,219.25 ms | Yes |
+
+Throughput plateaus near 25 operations per second because write replication is deliberately single-flight and each command follows the synchronous durable quorum path. The result is a correctness baseline and also identifies batching or pipelined replication as the clearest future performance improvement.
 <!-- BENCHMARK_RESULTS_END -->
 
 ## Interpretation limits

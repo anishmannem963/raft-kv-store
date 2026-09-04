@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.0.0 - Unreleased
+## v1.0.0 - 2026-09-04
 
 ### Added
 
@@ -13,6 +13,7 @@
 - Race-enabled unit tests and live Docker recovery tests
 - Reproducible multi-concurrency benchmark suite with JSON artifacts
 - Fifty-scenario process, partition, snapshot, and restart fault matrix
+- Verified 15-run benchmark covering 150,000 successful writes with zero failures and complete replica convergence
 
 ### Fixed
 

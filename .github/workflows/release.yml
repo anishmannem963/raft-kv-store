@@ -4,15 +4,26 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build and publish
+        required: true
+        type: string
 
 permissions:
   contents: read
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23.x'
@@ -36,6 +47,8 @@ jobs:
             goarch: amd64
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23.x'
@@ -46,7 +59,7 @@ jobs:
           CGO_ENABLED: '0'
         run: |
           set -euo pipefail
-          package="raft-kv-store-${GITHUB_REF_NAME}-${GOOS}-${GOARCH}"
+          package="raft-kv-store-${RELEASE_TAG}-${GOOS}-${GOARCH}"
           mkdir -p "dist/${package}"
           extension=''
           if [[ "$GOOS" == 'windows' ]]; then extension='.exe'; fi
@@ -60,7 +73,7 @@ jobs:
           fi
       - uses: actions/upload-artifact@v4
         with:
-          name: raft-kv-store-${{ github.ref_name }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: raft-kv-store-${{ env.RELEASE_TAG }}-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
             dist/*.tar.gz
             dist/*.tar.gz.sha256
@@ -77,19 +90,20 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: raft-kv-store-${{ github.ref_name }}-*
+          pattern: raft-kv-store-${{ env.RELEASE_TAG }}-*
           path: dist
           merge-multiple: true
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/* --clobber
           else
-            gh release create "$GITHUB_REF_NAME" dist/* \
+            gh release create "$RELEASE_TAG" dist/* \
               --verify-tag \
-              --title "$GITHUB_REF_NAME" \
+              --title "$RELEASE_TAG" \
               --generate-notes
           fi

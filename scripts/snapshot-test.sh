@@ -28,7 +28,7 @@ docker compose stop "$lagging_service" >/dev/null
 
 for index in $(seq 1 105); do
   committed=false
-  for _ in $(seq 1 20); do
+  for _ in $(seq 1 100); do
     if curl --silent --fail \
       --request PUT "http://localhost:${leader_port}/kv/snapshot-${index}" \
       --header 'Content-Type: application/json' \
@@ -43,8 +43,10 @@ for index in $(seq 1 105); do
   done
   if [[ "$committed" != true ]]; then
     echo "Snapshot write ${index} did not commit after retries"
+    docker compose logs
     exit 1
   fi
+  sleep 0.01
 done
 
 leader_status=$(curl --silent --fail "http://localhost:${leader_port}/status")

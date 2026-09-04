@@ -1,0 +1,50 @@
+name: Fault Matrix
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fault-matrix.yml'
+      - 'cmd/fault-summary/**'
+      - 'scripts/fault-matrix.sh'
+  workflow_dispatch:
+    inputs:
+      leader_scenarios:
+        description: Leader crash scenarios
+        required: true
+        default: '15'
+      partition_scenarios:
+        description: Network partition scenarios
+        required: true
+        default: '15'
+      snapshot_scenarios:
+        description: Snapshot recovery scenarios
+        required: true
+        default: '10'
+      restart_scenarios:
+        description: Container restart scenarios
+        required: true
+        default: '10'
+jobs:
+  fault-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+      - name: Run fault matrix
+        run: >-
+          ./scripts/fault-matrix.sh
+          '${{ inputs.leader_scenarios }}'
+          '${{ inputs.partition_scenarios }}'
+          '${{ inputs.snapshot_scenarios }}'
+          '${{ inputs.restart_scenarios }}'
+          fault-matrix-results
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fault-matrix-results
+          path: fault-matrix-results
+      - if: always()
+        run: docker compose down --volumes

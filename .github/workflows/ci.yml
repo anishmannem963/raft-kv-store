@@ -16,27 +16,39 @@ jobs:
       - run: go build ./cmd/node
       - run: go build ./cmd/benchmark
       - run: go build ./cmd/benchmark-summary
+      - run: go build ./cmd/fault-summary
       - name: Verify replication and leader failover
         run: |
+          set -o pipefail
+          summary_file=${GITHUB_STEP_SUMMARY:-/tmp/raft-ci-summary.md}
           docker compose up --build --detach
           trap 'docker compose down --volumes' EXIT
           ./scripts/smoke-test.sh
+          docker compose down --volumes
+          docker compose up --detach
           ./scripts/leader-failure-test.sh | tee /tmp/failover-result.txt
-          echo '### Leader failover' >> "$GITHUB_STEP_SUMMARY"
-          tail -1 /tmp/failover-result.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '### Leader failover' >> "$summary_file"
+          tail -1 /tmp/failover-result.txt >> "$summary_file"
+          docker compose down --volumes
+          docker compose up --detach
           ./scripts/network-partition-test.sh | tee /tmp/partition-result.txt
-          echo '### Network partition recovery' >> "$GITHUB_STEP_SUMMARY"
-          tail -1 /tmp/partition-result.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '### Network partition recovery' >> "$summary_file"
+          tail -1 /tmp/partition-result.txt >> "$summary_file"
+          docker compose down --volumes
+          docker compose up --detach
           ./scripts/snapshot-test.sh | tee /tmp/snapshot-result.txt
-          echo '### Snapshot installation' >> "$GITHUB_STEP_SUMMARY"
-          tail -1 /tmp/snapshot-result.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '### Snapshot installation' >> "$summary_file"
+          tail -1 /tmp/snapshot-result.txt >> "$summary_file"
           docker compose down --volumes
           docker compose up --detach
           ./scripts/benchmark.sh 300 8 benchmark-results.json 2m
           ./scripts/benchmark-suite.sh 40 2 "1 4" benchmark-suite-results 2m
+          ./scripts/fault-matrix.sh 1 1 1 1 fault-matrix-results
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: ci-benchmark-results
           path: |
             benchmark-results.json
             benchmark-suite-results
+            fault-matrix-results

@@ -4,30 +4,60 @@ set -euo pipefail
 ports=(8081 8082 8083)
 declare -A services=([8081]=node1 [8082]=node2 [8083]=node3)
 
-leader_port=""
-for _ in $(seq 1 300); do
-  for port in "${ports[@]}"; do
-    status=$(curl --silent --fail "http://localhost:${port}/status" 2>/dev/null || true)
-    if [[ "$status" == *'"state":"leader"'* ]]; then leader_port=$port; break 2; fi
+find_leader() {
+  local excluded_port=${1:-}
+  for _ in $(seq 1 300); do
+    for port in "${ports[@]}"; do
+      [[ "$port" == "$excluded_port" ]] && continue
+      status=$(curl --silent --fail "http://localhost:${port}/status" 2>/dev/null || true)
+      if [[ "$status" == *'"state":"leader"'* ]]; then echo "$port"; return 0; fi
+    done
+    sleep 0.05
   done
-  sleep 0.05
-done
-if [[ -z "$leader_port" ]]; then echo "No leader found"; exit 1; fi
+  return 1
+}
 
+leader_port=$(find_leader) || { echo "No leader found"; exit 1; }
 lagging_port=""
+
+commit_write() {
+  local index=$1
+  committed=false
+  for _ in $(seq 1 100); do
+    http_status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+      --request PUT "http://localhost:${leader_port}/kv/snapshot-${index}" \
+      --header 'Content-Type: application/json' \
+      --header 'X-Client-ID: snapshot-test' \
+      --header "X-Request-ID: write-${index}" \
+      --data "{\"value\":\"value-${index}\"}" || true)
+    if [[ "$http_status" == 201 ]]; then
+      committed=true
+      break
+    fi
+    if candidate=$(find_leader "$lagging_port"); then leader_port=$candidate; fi
+    sleep 0.05
+  done
+  if [[ "$committed" != true ]]; then
+    echo "Snapshot write ${index} did not commit after retries"
+    docker compose logs
+    exit 1
+  fi
+  sleep 0.01
+}
+
+for index in $(seq 1 90); do
+  commit_write "$index"
+done
+
+leader_port=$(find_leader) || { echo "No leader found before follower outage"; exit 1; }
 for port in "${ports[@]}"; do
   if [[ "$port" != "$leader_port" ]]; then lagging_port=$port; break; fi
 done
 lagging_service=${services[$lagging_port]}
 docker compose stop "$lagging_service" >/dev/null
 
-for index in $(seq 1 105); do
-  curl --silent --fail-with-body \
-    --request PUT "http://localhost:${leader_port}/kv/snapshot-${index}" \
-    --header 'Content-Type: application/json' \
-    --header 'X-Client-ID: snapshot-test' \
-    --header "X-Request-ID: write-${index}" \
-    --data "{\"value\":\"value-${index}\"}" >/dev/null
+for index in $(seq 91 105); do
+  commit_write "$index"
 done
 
 leader_status=$(curl --silent --fail "http://localhost:${leader_port}/status")
@@ -45,7 +75,10 @@ for _ in $(seq 1 300); do
 done
 if [[ "$recovered" != true ]]; then
   echo "Lagging follower did not recover through snapshot installation"
-  docker compose logs "$lagging_service"
+  for port in "${ports[@]}"; do
+    echo "Status on port ${port}: $(curl --silent "http://localhost:${port}/status" || true)"
+  done
+  docker compose logs
   exit 1
 fi
 

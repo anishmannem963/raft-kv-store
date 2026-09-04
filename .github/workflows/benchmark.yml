@@ -7,6 +7,7 @@ on:
       - 'cmd/benchmark/**'
       - 'cmd/benchmark-summary/**'
       - 'scripts/benchmark*.sh'
+      - 'internal/raft/**'
   workflow_dispatch:
     inputs:
       requests:

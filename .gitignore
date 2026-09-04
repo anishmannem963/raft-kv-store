@@ -2,4 +2,5 @@
 *.out
 benchmark-results.json
 benchmark-suite-results/
+fault-matrix-results/
 .DS_Store

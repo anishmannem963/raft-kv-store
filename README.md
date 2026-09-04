@@ -59,6 +59,14 @@ The CI fault-injection test identifies the active leader, commits a value, stops
 
 The partition test keeps the old leader process alive but disconnects it from the cluster network. It verifies that the isolated leader cannot serve a linearizable read, the two-node majority elects a leader and commits, and the healed cluster converges to one leader with identical committed state. Election and healing durations are recorded in the Actions summary.
 
+Run a reproducible write benchmark against a running cluster:
+
+```bash
+./scripts/benchmark.sh 10000 16 benchmark-results.json
+```
+
+The machine-readable result reports successful and failed writes, throughput, min/p50/p95/p99/max latency, and final cluster convergence. Convergence requires every node to report the same commit index, key count, and deterministic SHA-256 state hash. CI recreates a clean cluster for a bounded 300-write check on each change; the manually dispatched `Benchmark` workflow defaults to 10,000 writes with a 10-minute limit and uploads its JSON result as an artifact.
+
 Committed logs are compacted into snapshots after 100 entries. A snapshot contains the key/value state and request-deduplication records at an absolute log index and term. When a follower falls behind the compacted prefix, the leader installs the snapshot and then streams the remaining log suffix. CI validates this by stopping a follower for 105 writes and requiring it to recover after restart.
 
 ## Roadmap
@@ -72,4 +80,4 @@ Committed logs are compacted into snapshots after 100 entries. A snapshot contai
 - [x] Automated container-restart recovery test
 - [x] Automated leader-failure recovery test
 - [x] Automated network-partition recovery test
-- [ ] Benchmarks for election, throughput, and recovery time
+- [x] Reproducible throughput, latency, election, and recovery benchmarks

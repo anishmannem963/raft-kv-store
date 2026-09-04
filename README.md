@@ -65,7 +65,7 @@ Run a reproducible write benchmark against a running cluster:
 ./scripts/benchmark.sh 10000 16 benchmark-results.json
 ```
 
-The machine-readable result reports successful and failed writes, throughput, min/p50/p95/p99/max latency, and final cluster convergence. Convergence requires every node to report the same commit index, key count, and deterministic SHA-256 state hash. CI runs a bounded 300-write check on each change; the manually dispatched `Benchmark` workflow defaults to 10,000 writes and uploads its JSON result as an artifact.
+The machine-readable result reports successful and failed writes, throughput, min/p50/p95/p99/max latency, and final cluster convergence. Convergence requires every node to report the same commit index, key count, and deterministic SHA-256 state hash. CI recreates a clean cluster for a bounded 300-write check on each change; the manually dispatched `Benchmark` workflow defaults to 10,000 writes with a 10-minute limit and uploads its JSON result as an artifact.
 
 Committed logs are compacted into snapshots after 100 entries. A snapshot contains the key/value state and request-deduplication records at an absolute log index and term. When a follower falls behind the compacted prefix, the leader installs the snapshot and then streams the remaining log suffix. CI validates this by stopping a follower for 105 writes and requiring it to recover after restart.
 

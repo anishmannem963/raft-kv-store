@@ -29,7 +29,9 @@ jobs:
           ./scripts/snapshot-test.sh | tee /tmp/snapshot-result.txt
           echo '### Snapshot installation' >> "$GITHUB_STEP_SUMMARY"
           tail -1 /tmp/snapshot-result.txt >> "$GITHUB_STEP_SUMMARY"
-          ./scripts/benchmark.sh 300 8 benchmark-results.json
+          docker compose down --volumes
+          docker compose up --detach
+          ./scripts/benchmark.sh 300 8 benchmark-results.json 2m
       - uses: actions/upload-artifact@v4
         with:
           name: ci-benchmark-results

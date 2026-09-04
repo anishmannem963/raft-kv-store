@@ -19,6 +19,7 @@ jobs:
       - run: go build ./cmd/fault-summary
       - name: Verify replication and leader failover
         run: |
+          set -o pipefail
           docker compose up --build --detach
           trap 'docker compose down --volumes' EXIT
           ./scripts/smoke-test.sh

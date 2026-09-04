@@ -77,6 +77,9 @@ partition_started_ms=$(date +%s%3N)
 docker network disconnect "$cluster_network" "$isolated_container"
 partition_active=true
 
+# Let RPCs started before the disconnect finish before checking quorum loss.
+sleep 0.2
+
 if docker exec "$isolated_container" wget -qO- http://127.0.0.1:8080/kv/before-partition >/dev/null 2>&1; then
   echo "Isolated leader served a linearizable read without quorum"
   exit 1

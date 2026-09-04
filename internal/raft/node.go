@@ -17,6 +17,7 @@ var ErrRequestConflict = errors.New("request ID was already used with a differen
 
 type Node struct {
 	mu sync.Mutex
+	replicationMu sync.Mutex
 	id string
 	peers map[string]string
 	transport Transport
@@ -198,6 +199,8 @@ func (n *Node) LeaderAddress() string { n.mu.Lock(); defer n.mu.Unlock(); return
 func (n *Node) Status() Status { n.mu.Lock(); defer n.mu.Unlock(); s:=Status{ID:n.id,State:n.state,Term:n.term,LeaderID:n.leaderID,CommitIndex:n.commitIndex,LogLength:len(n.log),SnapshotIndex:n.snapshot.LastIncludedIndex,KeyCount:len(n.store),StateHash:stateHash(n.store),StorageOK:n.storageErr==nil}; if n.storageErr!=nil { s.StorageError=n.storageErr.Error() }; return s }
 
 func (n *Node) replicateAll() bool {
+	n.replicationMu.Lock()
+	defer n.replicationMu.Unlock()
 	n.mu.Lock(); if n.state!=Leader { n.mu.Unlock(); return false }; term:=n.term; n.mu.Unlock()
 	acks:=1; var ackMu sync.Mutex; var wg sync.WaitGroup
 	for id,address:=range n.peers { if id!=n.id { wg.Add(1); go func(peerID,peer string) { defer wg.Done(); if n.replicatePeer(term,peerID,peer) { ackMu.Lock(); acks++; ackMu.Unlock() } }(id,address) } }

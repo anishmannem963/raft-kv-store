@@ -47,6 +47,35 @@ func TestLeaderCommitsWithMajority(t *testing.T){
 	if replicatedEntries<1 { t.Fatal("entry was not replicated") }
 }
 
+func TestConcurrentLeaderWritesCommit(t *testing.T) {
+	transport := fakeTransport{append: func(r AppendEntriesRequest) AppendEntriesResponse {
+		return AppendEntriesResponse{Term: r.Term, Success: true, MatchIndex: r.PrevLogIndex + len(r.Entries)}
+	}}
+	n := NewNode("n1", map[string]string{"n1":"one", "n2":"two", "n3":"three"}, transport)
+	n.state = Leader
+	n.term = 1
+	n.leaderID = "n1"
+	n.nextIndex["n2"] = 0
+	n.nextIndex["n3"] = 0
+
+	const writes = 50
+	errors := make(chan error, writes)
+	var wg sync.WaitGroup
+	for index := 0; index < writes; index++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			errors <- n.PutWithRequest("concurrent-test", string(rune(index)), "shared", "value")
+		}(index)
+	}
+	wg.Wait()
+	close(errors)
+	for err := range errors {
+		if err != nil { t.Fatalf("concurrent write failed: %v", err) }
+	}
+	if status := n.Status(); status.CommitIndex != writes-1 { t.Fatalf("only committed through index %d", status.CommitIndex) }
+}
+
 type unavailableTransport struct{}
 
 func (unavailableTransport) RequestVote(context.Context, string, RequestVoteRequest) (RequestVoteResponse, error) {

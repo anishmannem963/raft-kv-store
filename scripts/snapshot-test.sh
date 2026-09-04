@@ -64,7 +64,10 @@ for _ in $(seq 1 300); do
 done
 if [[ "$recovered" != true ]]; then
   echo "Lagging follower did not recover through snapshot installation"
-  docker compose logs "$lagging_service"
+  for port in "${ports[@]}"; do
+    echo "Status on port ${port}: $(curl --silent "http://localhost:${port}/status" || true)"
+  done
+  docker compose logs
   exit 1
 fi
 

@@ -165,15 +165,8 @@ func waitConvergence(ctx context.Context, client *http.Client, endpoints []strin
 			}
 			statuses = append(statuses, item)
 		}
-		if valid && len(statuses) > 0 {
-			first := statuses[0]
-			equal := first.KeyCount >= requests && first.StateHash != ""
-			for _, item := range statuses[1:] {
-				equal = equal && item.CommitIndex == first.CommitIndex && item.KeyCount == first.KeyCount && item.StateHash == first.StateHash
-			}
-			if equal {
-				return statuses, nil
-			}
+		if valid && statusesConverged(statuses, requests) {
+			return statuses, nil
 		}
 		select {
 		case <-ctx.Done():
@@ -181,6 +174,26 @@ func waitConvergence(ctx context.Context, client *http.Client, endpoints []strin
 		case <-ticker.C:
 		}
 	}
+}
+
+func statusesConverged(statuses []status, minimumKeys int) bool {
+	if len(statuses) == 0 {
+		return false
+	}
+	first := statuses[0]
+	if first.KeyCount < minimumKeys || first.StateHash == "" {
+		return false
+	}
+	leaders := 0
+	for _, item := range statuses {
+		if item.State == "leader" {
+			leaders++
+		}
+		if item.CommitIndex != first.CommitIndex || item.KeyCount != first.KeyCount || item.StateHash != first.StateHash {
+			return false
+		}
+	}
+	return leaders == 1
 }
 
 func percentile(values []time.Duration, p float64) float64 {

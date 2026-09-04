@@ -15,6 +15,7 @@ jobs:
       - run: go test -race -count=5 ./...
       - run: go build ./cmd/node
       - run: go build ./cmd/benchmark
+      - run: go build ./cmd/benchmark-summary
       - name: Verify replication and leader failover
         run: |
           docker compose up --build --detach
@@ -32,7 +33,10 @@ jobs:
           docker compose down --volumes
           docker compose up --detach
           ./scripts/benchmark.sh 300 8 benchmark-results.json 2m
+          ./scripts/benchmark-suite.sh 40 2 "1 4" benchmark-suite-results 2m
       - uses: actions/upload-artifact@v4
         with:
           name: ci-benchmark-results
-          path: benchmark-results.json
+          path: |
+            benchmark-results.json
+            benchmark-suite-results

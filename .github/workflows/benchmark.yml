@@ -1,5 +1,12 @@
 name: Benchmark
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/benchmark.yml'
+      - 'cmd/benchmark/**'
+      - 'cmd/benchmark-summary/**'
+      - 'scripts/benchmark*.sh'
   workflow_dispatch:
     inputs:
       requests:
@@ -7,9 +14,13 @@ on:
         required: true
         default: '10000'
       concurrency:
-        description: Parallel workers
+        description: Space-separated concurrency levels
         required: true
-        default: '16'
+        default: '1 8 16'
+      repetitions:
+        description: Runs per concurrency level
+        required: true
+        default: '5'
 jobs:
   benchmark:
     runs-on: ubuntu-latest
@@ -18,12 +29,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23.x'
-      - run: docker compose up --build --detach
-      - name: Run benchmark
-        run: ./scripts/benchmark.sh '${{ inputs.requests }}' '${{ inputs.concurrency }}' benchmark-results.json 10m
+      - name: Run benchmark suite
+        run: ./scripts/benchmark-suite.sh '${{ inputs.requests }}' '${{ inputs.repetitions }}' '${{ inputs.concurrency }}' benchmark-suite-results 10m
       - uses: actions/upload-artifact@v4
         with:
-          name: benchmark-results
-          path: benchmark-results.json
+          name: benchmark-suite-results
+          path: benchmark-suite-results
       - if: always()
         run: docker compose down --volumes

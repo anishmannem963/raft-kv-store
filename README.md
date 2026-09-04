@@ -67,6 +67,14 @@ Run a reproducible write benchmark against a running cluster:
 
 The machine-readable result reports successful and failed writes, throughput, min/p50/p95/p99/max latency, and final cluster convergence. Convergence requires every node to report the same commit index, key count, and deterministic SHA-256 state hash. CI recreates a clean cluster for a bounded 300-write check on each change; the manually dispatched `Benchmark` workflow defaults to 10,000 writes with a 10-minute limit and uploads its JSON result as an artifact.
 
+For repeated measurements across concurrency levels, run:
+
+```bash
+./scripts/benchmark-suite.sh 10000 5 "1 8 16" benchmark-suite-results 10m
+```
+
+Each repetition uses fresh cluster volumes. The suite preserves every raw run and produces `summary.json` with mean, median, minimum, and maximum throughput plus aggregate p50/p95/p99 latency and convergence totals. The manual GitHub workflow uses these defaults, yielding 15 independent 10,000-write experiments.
+
 Committed logs are compacted into snapshots after 100 entries. A snapshot contains the key/value state and request-deduplication records at an absolute log index and term. When a follower falls behind the compacted prefix, the leader installs the snapshot and then streams the remaining log suffix. CI validates this by stopping a follower for 105 writes and requiring it to recover after restart.
 
 ## Roadmap

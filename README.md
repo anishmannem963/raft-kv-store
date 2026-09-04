@@ -143,4 +143,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development, testing, and pull-reques
 
 ## Releases
 
-Tags matching `v*` build checksum-protected node and benchmark archives for Linux, macOS, and Windows. Release history is recorded in [CHANGELOG.md](CHANGELOG.md).
+Tags matching `v*` build checksum-protected node and benchmark archives for Linux, macOS, and Windows, then attach them to the corresponding GitHub Release. Release history is recorded in [CHANGELOG.md](CHANGELOG.md).

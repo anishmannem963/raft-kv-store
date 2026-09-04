@@ -1,4 +1,5 @@
 /raft-node
 *.out
 benchmark-results.json
+benchmark-suite-results/
 .DS_Store

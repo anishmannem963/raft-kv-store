@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -116,7 +115,7 @@ func main() {
 func write(ctx context.Context, client *http.Client, endpoints []string, runID string, index int) error {
 	body := []byte(fmt.Sprintf(`{"value":"value-%d"}`, index))
 	key := fmt.Sprintf("bench-%s-%08d", runID, index)
-	for attempt := 0; attempt < 20; attempt++ {
+	for {
 		for _, endpoint := range endpoints {
 			req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint+"/kv/"+key, bytes.NewReader(body))
 			if err != nil {
@@ -141,7 +140,6 @@ func write(ctx context.Context, client *http.Client, endpoints []string, runID s
 		case <-time.After(25 * time.Millisecond):
 		}
 	}
-	return errors.New("write retries exhausted")
 }
 
 func waitConvergence(ctx context.Context, client *http.Client, endpoints []string, requests int) ([]status, error) {

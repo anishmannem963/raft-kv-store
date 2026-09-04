@@ -1,6 +1,13 @@
 package main
 
-import "testing"
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
+	"testing"
+	"time"
+)
 
 func TestStatusesConvergedRequiresExactlyOneLeader(t *testing.T) {
 	base := []status{
@@ -33,5 +40,26 @@ func TestStatusesConvergedRequiresMatchingStateAndMinimumKeys(t *testing.T) {
 	statuses[2].StateHash = "different"
 	if statusesConverged(statuses, 5) {
 		t.Fatal("different state hashes must not pass")
+	}
+}
+
+func TestWriteRetriesUntilSuccess(t *testing.T) {
+	var attempts atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if attempts.Add(1) > 20 {
+			w.WriteHeader(http.StatusCreated)
+			return
+		}
+		http.Error(w, "retry", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := write(ctx, server.Client(), []string{server.URL}, "test-run", 0); err != nil {
+		t.Fatalf("write should retry until success: %v", err)
+	}
+	if attempts.Load() != 21 {
+		t.Fatalf("attempts = %d, want 21", attempts.Load())
 	}
 }

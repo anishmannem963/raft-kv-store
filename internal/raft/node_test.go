@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 type fakeTransport struct {
@@ -74,6 +76,35 @@ func TestConcurrentLeaderWritesCommit(t *testing.T) {
 		if err != nil { t.Fatalf("concurrent write failed: %v", err) }
 	}
 	if status := n.Status(); status.CommitIndex != writes-1 { t.Fatalf("only committed through index %d", status.CommitIndex) }
+}
+
+func TestLeaderIgnoresElectionTimeout(t *testing.T) {
+	var voteRequests atomic.Int32
+	transport := fakeTransport{
+		vote: func(r RequestVoteRequest) RequestVoteResponse {
+			voteRequests.Add(1)
+			return RequestVoteResponse{Term: r.Term, VoteGranted: true}
+		},
+		append: func(r AppendEntriesRequest) AppendEntriesResponse {
+			return AppendEntriesResponse{Term: r.Term, Success: true, MatchIndex: r.PrevLogIndex + len(r.Entries)}
+		},
+	}
+	n := NewNode("n1", map[string]string{"n1":"one", "n2":"two", "n3":"three"}, transport)
+	n.state = Leader
+	n.term = 7
+	n.leaderID = "n1"
+	n.electionMin = 10 * time.Millisecond
+	n.electionMax = 20 * time.Millisecond
+	n.heartbeat = 5 * time.Millisecond
+	n.Start()
+	time.Sleep(60 * time.Millisecond)
+	n.Stop()
+	if status := n.Status(); status.State != Leader || status.Term != 7 {
+		t.Fatalf("leader started a new election: state=%s term=%d", status.State, status.Term)
+	}
+	if got := voteRequests.Load(); got != 0 {
+		t.Fatalf("leader sent %d vote requests after its election timer fired", got)
+	}
 }
 
 type unavailableTransport struct{}

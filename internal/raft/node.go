@@ -82,7 +82,10 @@ func (n *Node) run() {
 	case <-n.resetElection:
 		if !timer.Stop() { select { case <-timer.C: default: } }
 		timer.Reset(n.randomElectionTimeout())
-	case <-timer.C: n.startElection(); timer.Reset(n.randomElectionTimeout())
+	case <-timer.C:
+		n.mu.Lock(); leader:=n.state==Leader; n.mu.Unlock()
+		if !leader { n.startElection() }
+		timer.Reset(n.randomElectionTimeout())
 	case <-heartbeats.C: n.mu.Lock(); leader:=n.state==Leader; n.mu.Unlock(); if leader { n.replicateAll() }
 	} }
 }

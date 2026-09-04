@@ -75,6 +75,14 @@ For repeated measurements across concurrency levels, run:
 
 Each repetition uses fresh cluster volumes. The suite preserves every raw run and produces `summary.json` with mean, median, minimum, and maximum throughput plus aggregate p50/p95/p99 latency and convergence totals. The manual GitHub workflow uses these defaults, yielding 15 independent 10,000-write experiments.
 
+Run the complete failure-recovery matrix with:
+
+```bash
+./scripts/fault-matrix.sh 15 15 10 10 fault-matrix-results
+```
+
+The 50 default scenarios use clean cluster volumes and cover leader process failures, live leader isolation, snapshot recovery for lagging followers, and durable container restarts. Each scenario writes a log and NDJSON record. `summary.json` reports pass rate and per-category recovery, election, and healing durations. Pull requests execute one scenario from every category; merging fault-matrix changes runs the complete suite automatically.
+
 Committed logs are compacted into snapshots after 100 entries. A snapshot contains the key/value state and request-deduplication records at an absolute log index and term. When a follower falls behind the compacted prefix, the leader installs the snapshot and then streams the remaining log suffix. CI validates this by stopping a follower for 105 writes and requiring it to recover after restart.
 
 ## Roadmap

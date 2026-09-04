@@ -16,6 +16,7 @@ jobs:
       - run: go build ./cmd/node
       - run: go build ./cmd/benchmark
       - run: go build ./cmd/benchmark-summary
+      - run: go build ./cmd/fault-summary
       - name: Verify replication and leader failover
         run: |
           docker compose up --build --detach
@@ -34,9 +35,11 @@ jobs:
           docker compose up --detach
           ./scripts/benchmark.sh 300 8 benchmark-results.json 2m
           ./scripts/benchmark-suite.sh 40 2 "1 4" benchmark-suite-results 2m
+          ./scripts/fault-matrix.sh 1 1 1 1 fault-matrix-results
       - uses: actions/upload-artifact@v4
         with:
           name: ci-benchmark-results
           path: |
             benchmark-results.json
             benchmark-suite-results
+            fault-matrix-results

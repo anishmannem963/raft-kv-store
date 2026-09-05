@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Interactive walkthrough of a fault-tolerant distributed key-value store built in Go with Raft consensus.">
+  <title>Raft KV Store — Interactive System Demo</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#lab" aria-label="Raft KV home">
+      <span class="brand-mark" aria-hidden="true">R</span>
+      <span><strong>RAFT / KV</strong><small>distributed systems lab</small></span>
+    </a>
+    <nav aria-label="Primary navigation">
+      <a href="#architecture">Architecture</a>
+      <a href="#protocol">Protocol</a>
+      <a href="#evidence">Evidence</a>
+      <a href="#interview">Interview mode</a>
+    </nav>
+    <a class="release-link" href="https://github.com/anishmannem963/raft-kv-store/releases/tag/v1.0.0" target="_blank" rel="noreferrer">v1.0.0 ↗</a>
+  </header>
+
+  <main>
+    <section id="lab" class="lab section-pad">
+      <div class="eyebrow"><span class="live-dot"></span> Interactive protocol model</div>
+      <div class="lab-heading">
+        <div>
+          <h1>Break the leader.<br><span>Keep the data.</span></h1>
+          <p>A visual walkthrough of a persistent three-node key-value store built in Go. Writes complete only after a two-node majority confirms the log entry.</p>
+        </div>
+        <div class="headline-stats" aria-label="Verified project results">
+          <div><strong>&lt;543<span>ms</span></strong><small>worst measured leader replacement</small></div>
+          <div><strong>150<span>k</span></strong><small>successful benchmark writes</small></div>
+          <div><strong>50/50</strong><small>fault scenarios passed</small></div>
+        </div>
+      </div>
+
+      <div class="console-shell">
+        <div class="console-toolbar">
+          <div class="scenario-tabs" role="group" aria-label="Simulation scenarios">
+            <button class="scenario active" data-action="normal">Healthy cluster</button>
+            <button class="scenario danger" data-action="crash">Crash leader</button>
+            <button class="scenario warning" data-action="partition">Partition leader</button>
+            <button class="scenario" data-action="lag">Lag follower</button>
+            <button class="scenario success" data-action="heal">Heal cluster</button>
+          </div>
+          <span class="simulation-label">SIMULATION · NOT LIVE TRAFFIC</span>
+        </div>
+
+        <div class="cluster-stage">
+          <div class="cluster-map" id="clusterMap">
+            <svg class="links" viewBox="0 0 720 330" preserveAspectRatio="none" aria-hidden="true">
+              <line id="link12" x1="360" y1="80" x2="160" y2="245"></line>
+              <line id="link13" x1="360" y1="80" x2="560" y2="245"></line>
+              <line id="link23" x1="160" y1="245" x2="560" y2="245"></line>
+            </svg>
+            <article class="node leader" id="node1" data-node="1">
+              <div class="node-head"><span class="node-id">01</span><span class="role">LEADER</span></div>
+              <strong>node-1</strong><small>Term <b class="term">18</b> · :8081</small>
+              <div class="log-strip"><i></i><i></i><i></i><i class="committed"></i><i class="committed"></i></div>
+              <span class="node-state">healthy</span>
+            </article>
+            <article class="node follower" id="node2" data-node="2">
+              <div class="node-head"><span class="node-id">02</span><span class="role">FOLLOWER</span></div>
+              <strong>node-2</strong><small>Term <b class="term">18</b> · :8082</small>
+              <div class="log-strip"><i></i><i></i><i></i><i class="committed"></i><i class="committed"></i></div>
+              <span class="node-state">healthy</span>
+            </article>
+            <article class="node follower" id="node3" data-node="3">
+              <div class="node-head"><span class="node-id">03</span><span class="role">FOLLOWER</span></div>
+              <strong>node-3</strong><small>Term <b class="term">18</b> · :8083</small>
+              <div class="log-strip"><i></i><i></i><i></i><i class="committed"></i><i class="committed"></i></div>
+              <span class="node-state">healthy</span>
+            </article>
+            <div class="quorum-badge" id="quorumBadge"><span>2 / 3</span> quorum available</div>
+          </div>
+
+          <aside class="event-panel">
+            <div class="event-head"><span>EVENT STREAM</span><button id="resetLog">clear</button></div>
+            <div class="event-log" id="eventLog" aria-live="polite">
+              <p><time>00:00.000</time><span class="ok">✓</span> Cluster initialized</p>
+              <p><time>00:00.311</time><span class="info">→</span> node-1 elected leader, term 18</p>
+              <p><time>00:00.312</time><span class="ok">✓</span> Majority quorum available</p>
+            </div>
+            <div class="write-box">
+              <label for="keyInput">Try a quorum write</label>
+              <div><input id="keyInput" value="interview" aria-label="Key"><span>=</span><input id="valueInput" value="ready" aria-label="Value"><button id="putButton">PUT</button></div>
+              <small id="writeStatus">Writes are acknowledged after replication to 2 of 3 nodes.</small>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <section id="architecture" class="section-pad architecture">
+      <div class="section-kicker">01 / SYSTEM DESIGN</div>
+      <div class="section-title"><h2>One logical store.<br>Three independent processes.</h2><p>Clients can contact any node. Followers redirect writes to the current leader. The leader serializes mutations, replicates log entries, and acknowledges only after a majority has persisted them.</p></div>
+      <div class="flow-grid">
+        <div class="flow-card client"><span>01</span><strong>HTTP client</strong><small>PUT · GET · status</small></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-card gateway"><span>02</span><strong>Leader API</strong><small>validation · deduplication</small></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-card raft"><span>03</span><strong>Raft core</strong><small>term · log · commit index</small></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-card disk"><span>04</span><strong>Durable state</strong><small>atomic write · fsync · rename</small></div>
+      </div>
+      <div class="boundary-grid">
+        <article><div class="icon-box">API</div><h3>Client boundary</h3><p>HTTP endpoints expose writes, linearizable reads, explicitly stale reads, and observable node status.</p></article>
+        <article><div class="icon-box">RPC</div><h3>Peer boundary</h3><p><code>RequestVote</code>, <code>AppendEntries</code>, and <code>InstallSnapshot</code> coordinate nodes over non-persistent HTTP connections.</p></article>
+        <article><div class="icon-box">SSD</div><h3>Storage boundary</h3><p>Terms, votes, logs, snapshots, and commit progress survive process and container restarts.</p></article>
+      </div>
+    </section>
+
+    <section id="protocol" class="section-pad protocol">
+      <div class="section-kicker">02 / WRITE PATH</div>
+      <div class="section-title"><h2>What happens after<br><code>PUT /kv/color</code>?</h2><p>The safety guarantee comes from order: persist locally, replicate to peers, reach quorum, then apply and acknowledge.</p></div>
+      <div class="stepper" id="stepper">
+        <div class="steps" role="tablist" aria-label="Write protocol steps">
+          <button class="step active" data-step="0"><span>1</span><b>Accept</b><small>Leader validates request</small></button>
+          <button class="step" data-step="1"><span>2</span><b>Append</b><small>Persist local log entry</small></button>
+          <button class="step" data-step="2"><span>3</span><b>Replicate</b><small>Send AppendEntries</small></button>
+          <button class="step" data-step="3"><span>4</span><b>Commit</b><small>Majority confirms</small></button>
+          <button class="step" data-step="4"><span>5</span><b>Apply</b><small>Update state machine</small></button>
+        </div>
+        <div class="step-detail">
+          <div><span class="mono-label" id="stepLabel">STEP 1 · CLIENT BOUNDARY</span><h3 id="stepTitle">Only the leader accepts a mutation.</h3><p id="stepCopy">A follower returns the known leader so the client can retry. A client/request ID makes that retry idempotent instead of creating a duplicate write.</p></div>
+          <pre id="stepCode"><span class="dim">POST</span> /kv/color
+{
+  <span class="key">"value"</span>: <span class="string">"cyan"</span>,
+  <span class="key">"client_id"</span>: <span class="string">"demo"</span>,
+  <span class="key">"request_id"</span>: <span class="string">"42"</span>
+}</pre>
+        </div>
+      </div>
+
+      <div class="consistency-grid">
+        <article class="feature-card bright"><span class="tag">DEFAULT</span><h3>Linearizable read</h3><p>Leader-only read that confirms current-term authority with a quorum. It never returns an older value after a completed write.</p><code>GET /kv/:key</code></article>
+        <article class="feature-card"><span class="tag">DIAGNOSTIC</span><h3>Stale replica read</h3><p>Available from any node without a quorum round trip. Useful for observing replication while explicitly accepting older data.</p><code>GET /kv/:key?consistency=stale</code></article>
+        <article class="feature-card"><span class="tag">RETRY SAFE</span><h3>Idempotent write</h3><p>A repeated request ID returns the original result. Reusing that ID for different content is rejected as a conflict.</p><code>client_id + request_id</code></article>
+      </div>
+    </section>
+
+    <section class="section-pad failures">
+      <div class="section-kicker">03 / FAILURE ENGINEERING</div>
+      <div class="section-title"><h2>Fault tolerance is a<br>tested behavior.</h2><p>Each scenario begins with fresh containers and volumes, injects one controlled failure, verifies safety during the fault, heals the cluster, and checks deterministic convergence.</p></div>
+      <div class="failure-list">
+        <article><span class="failure-num">15×</span><div><h3>Leader process crash</h3><p>Stop the active leader, elect a replacement, commit through the surviving quorum, restart the old leader, verify catch-up.</p></div><span class="result">PASS</span></article>
+        <article><span class="failure-num">15×</span><div><h3>Live network partition</h3><p>Keep the old leader running but isolated. It must reject quorum-confirmed reads while the majority partition elects and writes.</p></div><span class="result">PASS</span></article>
+        <article><span class="failure-num">10×</span><div><h3>Lagging follower</h3><p>Leave a follower behind the compaction boundary, then require snapshot installation plus log-suffix catch-up.</p></div><span class="result">PASS</span></article>
+        <article><span class="failure-num">10×</span><div><h3>Container restart</h3><p>Recover persisted term, vote, log, snapshot, commit index, key/value state, and deduplication records without reconfiguration.</p></div><span class="result">PASS</span></article>
+      </div>
+      <div class="invariant-banner"><span>INVARIANT</span><strong>A minority may remain available, but it cannot commit.</strong><p>This prevents split-brain writes: progress requires two of three nodes.</p></div>
+    </section>
+
+    <section class="section-pad storage">
+      <div class="section-kicker">04 / PERSISTENCE + COMPACTION</div>
+      <div class="section-title"><h2>Bounded history.<br>Complete recovery.</h2><p>Snapshots keep the replicated log from growing forever while preserving enough state to reconstruct the service and retry semantics.</p></div>
+      <div class="snapshot-demo">
+        <div class="timeline">
+          <div class="snapshot-block"><span>SNAPSHOT</span><strong>index 100</strong><small>KV state + request dedupe</small></div>
+          <div class="entry compacted">1–100<div>compacted prefix</div></div>
+          <div class="entry active">101</div><div class="entry active">102</div><div class="entry active">103</div><div class="entry active">104</div><div class="entry pending">105</div>
+        </div>
+        <div class="snapshot-notes">
+          <p><span>01</span>Leader detects follower's <code>nextIndex</code> is behind the retained log.</p>
+          <p><span>02</span><code>InstallSnapshot</code> transfers the compacted state atomically.</p>
+          <p><span>03</span>Normal replication resumes with entries after the snapshot index.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="evidence" class="section-pad evidence">
+      <div class="section-kicker">05 / MEASURED EVIDENCE</div>
+      <div class="section-title"><h2>Claims backed by<br>repeatable experiments.</h2><p>Fifteen independent 10,000-write runs used fresh cluster state at concurrency 1, 8, and 16. Every run verified commit index, key count, and a deterministic SHA-256 state hash across all nodes.</p></div>
+      <div class="evidence-grid">
+        <div class="metric-tile hero-metric"><small>TOTAL SUCCESSFUL WRITES</small><strong>150,000</strong><div class="metric-foot"><span>0 failed</span><span>0 divergent</span></div></div>
+        <div class="metric-tile"><small>FAULT MATRIX</small><strong>50<span>/50</span></strong><div class="bar"><i style="width:100%"></i></div><p>100% scenario pass rate</p></div>
+        <div class="metric-tile"><small>LEADER REPLACEMENT</small><strong>543<span> ms</span></strong><div class="bar"><i style="width:54.3%"></i></div><p>maximum observed in matrix</p></div>
+        <div class="metric-tile"><small>PARTITION HEALING</small><strong>180<span> ms</span></strong><div class="bar"><i style="width:18%"></i></div><p>maximum observed convergence</p></div>
+      </div>
+      <div class="benchmark-table-wrap">
+        <div class="table-title"><div><strong>Throughput / latency matrix</strong><small>Five 10,000-write repetitions per concurrency level</small></div><span>durable quorum writes</span></div>
+        <table>
+          <thead><tr><th>Concurrency</th><th>Mean throughput</th><th>p50 latency</th><th>p95 latency</th><th>p99 latency</th><th>Convergence</th></tr></thead>
+          <tbody>
+            <tr><td><b>1</b> worker</td><td>21.52 ops/s</td><td>45.97 ms</td><td>86.20 ms</td><td>106.59 ms</td><td><span class="verified">Verified</span></td></tr>
+            <tr><td><b>8</b> workers</td><td>24.99 ops/s</td><td>325.18 ms</td><td>576.37 ms</td><td>609.42 ms</td><td><span class="verified">Verified</span></td></tr>
+            <tr><td><b>16</b> workers</td><td>25.50 ops/s</td><td>625.29 ms</td><td>1134.82 ms</td><td>1206.84 ms</td><td><span class="verified">Verified</span></td></tr>
+          </tbody>
+        </table>
+        <p class="honesty-note"><b>Why throughput plateaus:</b> the implementation prioritizes understandable safety and synchronous durable writes over batching. Each committed mutation pays persistence and quorum costs—an explicit engineering tradeoff, not a hidden benchmark condition.</p>
+      </div>
+    </section>
+
+    <section class="section-pad solved">
+      <div class="section-kicker">06 / PROBLEMS SOLVED</div>
+      <div class="section-title"><h2>From failure mode<br>to engineering control.</h2><p>The project is a collection of safety decisions. Each mechanism exists because a specific distributed-systems failure makes the simpler design incorrect.</p></div>
+      <div class="problem-grid">
+        <article><span>PROBLEM</span><h3>Single-node failure loses availability</h3><i>↓</i><span>SOLUTION</span><p>Replicated log, randomized elections, heartbeats, and majority-based leadership.</p></article>
+        <article><span>PROBLEM</span><h3>Two leaders can claim authority</h3><i>↓</i><span>SOLUTION</span><p>Monotonic terms, one persisted vote per term, and step-down on higher-term messages.</p></article>
+        <article><span>PROBLEM</span><h3>A retry can apply a write twice</h3><i>↓</i><span>SOLUTION</span><p>Persisted client/request IDs with same-command replay and conflict rejection.</p></article>
+        <article><span>PROBLEM</span><h3>Quorum contact alone can allow a stale read</h3><i>↓</i><span>SOLUTION</span><p>A committed current-term no-op barrier before serving linearizable reads.</p></article>
+        <article><span>PROBLEM</span><h3>An old leader remains alive after partition</h3><i>↓</i><span>SOLUTION</span><p>Quorum-confirmed reads and writes; non-persistent peer connections reflect network state.</p></article>
+        <article><span>PROBLEM</span><h3>Logs grow and slow follower recovery</h3><i>↓</i><span>SOLUTION</span><p>Automatic snapshots, absolute log indexes, compaction, and InstallSnapshot RPC.</p></article>
+      </div>
+    </section>
+
+    <section id="interview" class="section-pad interview">
+      <div class="section-kicker">07 / INTERVIEW MODE</div>
+      <div class="section-title"><h2>Explain the system<br>from first principles.</h2><p>Use these prompts to walk through the design. Open any question for a concise answer, then follow the source links for implementation detail.</p></div>
+      <div class="qa-list">
+        <details open><summary><span>01</span>Why does a three-node cluster tolerate only one failure?<b>+</b></summary><p>A commit needs a majority: two votes or acknowledgements. With one node unavailable, two remain and can progress. With two unavailable, the survivor cannot distinguish failure from partition and must stop committing to preserve safety.</p></details>
+        <details><summary><span>02</span>What happens when the current leader crashes?<b>+</b></summary><p>Followers stop receiving heartbeats. After randomized election timeouts, one becomes candidate, increments the term, votes for itself, and requests votes. A candidate with an up-to-date log becomes leader after receiving two votes.</p></details>
+        <details><summary><span>03</span>Why can’t the isolated old leader keep writing?<b>+</b></summary><p>It may append locally, but cannot collect a second acknowledgement. Without a majority, it cannot advance the commit index or report success. When connectivity returns, the higher-term leader overwrites any conflicting uncommitted suffix.</p></details>
+        <details><summary><span>04</span>How is a GET made linearizable?<b>+</b></summary><p>Reads are leader-only and quorum-confirmed. A newly elected leader first commits an entry from its current term, establishing authority over committed history before it serves the read.</p></details>
+        <details><summary><span>05</span>How does a follower recover after missing compacted entries?<b>+</b></summary><p>If the follower's next required index precedes the leader's retained log, the leader sends a snapshot. The follower installs it atomically, restores key/value and deduplication state, then receives the remaining log suffix normally.</p></details>
+        <details><summary><span>06</span>What real bug did fault testing uncover?<b>+</b></summary><p>Leaders were still processing their election timers, causing unnecessary term churn during sustained writes. The fix made leaders ignore election timeouts, and a race-enabled regression test now protects that state-machine rule.</p></details>
+      </div>
+    </section>
+
+    <section class="cta section-pad">
+      <div><span class="section-kicker">OPEN SOURCE · MIT LICENSE</span><h2>Read the implementation.<br>Reproduce the evidence.</h2></div>
+      <div class="cta-actions"><a class="primary-button" href="https://github.com/anishmannem963/raft-kv-store" target="_blank" rel="noreferrer">Explore repository ↗</a><a class="secondary-button" href="https://github.com/anishmannem963/raft-kv-store/releases/tag/v1.0.0" target="_blank" rel="noreferrer">Download v1.0.0</a></div>
+    </section>
+  </main>
+
+  <footer><span>Built by Anish Mannem</span><span>Go · Raft · Docker · GitHub Actions</span><a href="#lab">Back to cluster ↑</a></footer>
+  <script src="app.js"></script>
+</body>
+</html>

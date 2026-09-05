@@ -16,6 +16,14 @@ The browser simulation explains the behavior of the released system; it does not
 
 Open `index.html` in a browser, or serve this directory with any static file server.
 
-## Published demo
+## Deploy with Netlify
 
-https://raft-kv-showcase.anishmannem963.chatgpt.site
+The repository-level `netlify.toml` publishes this directory as a static site. In Netlify:
+
+1. Choose **Add new site → Import an existing project**.
+2. Connect this GitHub repository.
+3. Leave the build command empty.
+4. Netlify will use `website` as the publish directory from `netlify.toml`.
+5. Deploy the site.
+
+Future commits to the selected production branch will trigger automatic Netlify deployments.
